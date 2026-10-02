@@ -100,3 +100,8 @@ func ServerTLSConfig(cert tls.Certificate, root *x509.Certificate) *tls.Config {
 		ClientCAs:    pool,
 	}
 }
+
+// KubeAPIAddr is the virtual address the management plane dials to reach an
+// agent's kube-apiserver proxy. It is plain HTTP: the tunnel itself is
+// already mutually authenticated and encrypted.
+const KubeAPIAddr = "kube-apiserver.sextant.internal:80"

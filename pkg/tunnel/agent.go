@@ -5,8 +5,10 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
+	"fmt"
 	"log/slog"
 	"math/rand/v2"
+	"net"
 	"net/http"
 	"sync"
 	"sync/atomic"
@@ -42,11 +44,15 @@ type AgentConfig struct {
 	// rotated certificate is picked up without restarting the agent.
 	Certificate func() (*tls.Certificate, error)
 	// AllowedAddr is the only address the management plane may ask this agent
-	// to dial (the local kube-apiserver, e.g. "10.96.0.1:443"). Everything else
-	// is refused: a compromised management plane must not become a scanner of
-	// the customer network.
+	// to dial. Everything else is refused: a compromised management plane must
+	// not become a scanner of the customer network.
 	AllowedAddr string
-	Log         *slog.Logger
+	// Handler, when set, makes AllowedAddr a virtual address: connections to it
+	// are served in-process by Handler over in-memory pipes (no TCP port, no
+	// network dial), which is how the agent fronts the kube-apiserver while
+	// attaching its own credentials. When nil, AllowedAddr is dialed over TCP.
+	Handler http.Handler
+	Log     *slog.Logger
 }
 
 // Agent keeps one outbound tunnel alive.
@@ -90,6 +96,19 @@ func (a *Agent) Run(ctx context.Context) error {
 		},
 	}
 	allow := func(proto, addr string) bool { return proto == "tcp" && addr == a.cfg.AllowedAddr }
+	// One in-memory server for the agent's lifetime: it holds no per-session state.
+	var localDialer remotedialer.Dialer
+	if a.cfg.Handler != nil {
+		local := newLocalServer(a.cfg.Handler)
+		defer local.close()
+		localDialer = func(ctx context.Context, _, addr string) (net.Conn, error) {
+			// Second barrier behind the allow func: never serve any other address.
+			if addr != a.cfg.AllowedAddr {
+				return nil, fmt.Errorf("tunnel: address %q not allowed", addr)
+			}
+			return local.dial(ctx)
+		}
+	}
 
 	backoff := minBackoff
 	for ctx.Err() == nil {
@@ -102,7 +121,7 @@ func (a *Agent) Run(ctx context.Context) error {
 			established bool
 		)
 		began := time.Now()
-		err := remotedialer.ConnectToProxy(ctx, a.cfg.URL, http.Header{}, allow, dialer,
+		err := remotedialer.ConnectToProxyWithDialer(ctx, a.cfg.URL, http.Header{}, allow, dialer, localDialer,
 			func(context.Context, *remotedialer.Session) error {
 				mu.Lock()
 				defer mu.Unlock()

@@ -457,3 +457,46 @@ func TestTunnelRouteRefusesConnectionsWithoutClientCertificate(t *testing.T) {
 		t.Fatalf("status = %d, want 401", resp.StatusCode)
 	}
 }
+
+const virtualAddr = "kube-apiserver.sextant.internal:80"
+
+func TestAgentHandlerServesVirtualAddressWithoutTCP(t *testing.T) {
+	e := newEnv(t, nil)
+	cfg := tunnel.AgentConfig{
+		URL:         "wss" + strings.TrimPrefix(e.mp.URL, "https") + "/connect",
+		Roots:       e.pool,
+		Certificate: static(e.agentCert("acme", "c1", time.Hour)),
+		AllowedAddr: virtualAddr,
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			_, _ = io.WriteString(w, "from agent handler: "+r.URL.Path)
+		}),
+		Log: quiet,
+	}
+	a, err := tunnel.NewAgent(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { _ = a.Run(ctx); close(done) }()
+	t.Cleanup(func() { cancel(); <-done })
+	eventually(t, 5*time.Second, "agent", func() bool { return a.Connected() })
+
+	d := e.server.Dialer(tid(t, "acme"), "c1")
+	c := &http.Client{Transport: &http.Transport{DialContext: d}, Timeout: 3 * time.Second}
+	resp, err := c.Get("http://" + virtualAddr + "/api/v1/pods")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if string(b) != "from agent handler: /api/v1/pods" {
+		t.Fatalf("body = %q", b)
+	}
+
+	// Any other address is still refused, even though a Handler is configured.
+	c2 := &http.Client{Transport: &http.Transport{DialContext: d}, Timeout: 2 * time.Second}
+	if _, err := c2.Get(e.target.URL); err == nil {
+		t.Fatal("agent dialed a non-allowed address")
+	}
+}
