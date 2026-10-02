@@ -27,6 +27,7 @@ type Object struct {
 	Kind            string
 	Name            string
 	ResourceVersion int64
+	Labels          map[string]string
 	Spec            json.RawMessage
 	Status          json.RawMessage
 	CreatedAt       time.Time
@@ -61,17 +62,24 @@ func (s *Store) inTenantTx(ctx context.Context, fn func(tx pgx.Tx, tenant string
 	return tx.Commit(ctx)
 }
 
-const cols = `kind, name, resource_version, spec, status, created_at, updated_at`
+const cols = `kind, name, resource_version, labels, spec, status, created_at, updated_at`
 
 func scan(row pgx.Row) (*Object, error) {
 	var o Object
-	if err := row.Scan(&o.Kind, &o.Name, &o.ResourceVersion, &o.Spec, &o.Status, &o.CreatedAt, &o.UpdatedAt); err != nil {
+	if err := row.Scan(&o.Kind, &o.Name, &o.ResourceVersion, &o.Labels, &o.Spec, &o.Status, &o.CreatedAt, &o.UpdatedAt); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound
 		}
 		return nil, err
 	}
 	return &o, nil
+}
+
+func labelsOrEmpty(m map[string]string) map[string]string {
+	if m == nil {
+		return map[string]string{}
+	}
+	return m
 }
 
 func orEmpty(m json.RawMessage) json.RawMessage {
@@ -87,8 +95,8 @@ func (s *Store) Create(ctx context.Context, o Object) (*Object, error) {
 	err := s.inTenantTx(ctx, func(tx pgx.Tx, tenant string) error {
 		var err error
 		out, err = scan(tx.QueryRow(ctx,
-			`INSERT INTO objects (tenant_id, kind, name, spec, status) VALUES ($1,$2,$3,$4,$5) RETURNING `+cols,
-			tenant, o.Kind, o.Name, orEmpty(o.Spec), orEmpty(o.Status)))
+			`INSERT INTO objects (tenant_id, kind, name, labels, spec, status) VALUES ($1,$2,$3,$4,$5,$6) RETURNING `+cols,
+			tenant, o.Kind, o.Name, labelsOrEmpty(o.Labels), orEmpty(o.Spec), orEmpty(o.Status)))
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
 			return ErrAlreadyExists
@@ -152,9 +160,9 @@ func (s *Store) Update(ctx context.Context, o Object) (*Object, error) {
 			return ErrConflict
 		}
 		out, err = scan(tx.QueryRow(ctx,
-			`UPDATE objects SET spec = $4, status = $5, resource_version = nextval('resource_version_seq'), updated_at = now()
+			`UPDATE objects SET labels = $4, spec = $5, status = $6, resource_version = nextval('resource_version_seq'), updated_at = now()
 			 WHERE tenant_id = $1 AND kind = $2 AND name = $3 RETURNING `+cols,
-			tenant, o.Kind, o.Name, orEmpty(o.Spec), orEmpty(o.Status)))
+			tenant, o.Kind, o.Name, labelsOrEmpty(o.Labels), orEmpty(o.Spec), orEmpty(o.Status)))
 		return err
 	})
 	return out, err

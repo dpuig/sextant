@@ -3,21 +3,16 @@ package storage_test
 import (
 	"context"
 	"errors"
-	"fmt"
-	"math/rand/v2"
-	"net/url"
-	"os"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/dpuig/sextant/pkg/storage"
+	"github.com/dpuig/sextant/pkg/storage/storagetest"
 	"github.com/dpuig/sextant/pkg/tenancy"
 )
 
-// Integration tests need a Postgres superuser DSN in SEXTANT_TEST_PG_DSN
-// (see `make test-integration`); they skip otherwise.
 type env struct {
 	store *storage.Store
 	pool  *pgxpool.Pool
@@ -25,46 +20,7 @@ type env struct {
 
 func setup(t *testing.T) *env {
 	t.Helper()
-	admin := os.Getenv("SEXTANT_TEST_PG_DSN")
-	if admin == "" {
-		t.Skip("SEXTANT_TEST_PG_DSN not set")
-	}
-	ctx := context.Background()
-	conn, err := pgx.Connect(ctx, admin)
-	if err != nil {
-		t.Fatal(err)
-	}
-	db := fmt.Sprintf("sextant_test_%d", rand.Uint32())
-	if _, err := conn.Exec(ctx, "CREATE DATABASE "+db); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		_, _ = conn.Exec(ctx, "DROP DATABASE "+db+" WITH (FORCE)")
-		_ = conn.Close(ctx)
-	})
-
-	u, _ := url.Parse(admin)
-	u.Path = "/" + db
-	owner, err := pgx.Connect(ctx, u.String())
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = owner.Close(ctx) }()
-	if err := storage.Migrate(ctx, owner); err != nil {
-		t.Fatal(err)
-	}
-	if err := storage.Migrate(ctx, owner); err != nil { // idempotent
-		t.Fatalf("second migrate: %v", err)
-	}
-	if _, err := conn.Exec(ctx, `ALTER ROLE sextant_app LOGIN PASSWORD 'app'`); err != nil {
-		t.Fatal(err)
-	}
-	u.User = url.UserPassword("sextant_app", "app")
-	pool, err := pgxpool.New(ctx, u.String())
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(pool.Close)
+	pool := storagetest.NewPool(t)
 	return &env{store: storage.New(pool), pool: pool}
 }
 
@@ -210,30 +166,13 @@ func TestRLS_CannotWriteAnotherTenantsRow(t *testing.T) {
 }
 
 func TestMigrate_ConcurrentRunnersAreSafe(t *testing.T) {
-	admin := os.Getenv("SEXTANT_TEST_PG_DSN")
-	if admin == "" {
-		t.Skip("SEXTANT_TEST_PG_DSN not set")
-	}
 	ctx := context.Background()
-	root, err := pgx.Connect(ctx, admin)
-	if err != nil {
-		t.Fatal(err)
-	}
-	db := fmt.Sprintf("sextant_test_%d", rand.Uint32())
-	if _, err := root.Exec(ctx, "CREATE DATABASE "+db); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		_, _ = root.Exec(ctx, "DROP DATABASE "+db+" WITH (FORCE)")
-		_ = root.Close(ctx)
-	})
-	u, _ := url.Parse(admin)
-	u.Path = "/" + db
+	dsn := storagetest.NewDatabase(t)
 
 	errs := make(chan error, 6)
 	for range 6 {
 		go func() {
-			c, err := pgx.Connect(ctx, u.String())
+			c, err := pgx.Connect(ctx, dsn)
 			if err != nil {
 				errs <- err
 				return
@@ -273,5 +212,26 @@ func TestUpdate_ConcurrentWritersExactlyOneWins(t *testing.T) {
 	}
 	if wins != 1 || conflicts != 7 {
 		t.Fatalf("wins=%d conflicts=%d, want 1 and 7", wins, conflicts)
+	}
+}
+
+func TestLabelsRoundTrip(t *testing.T) {
+	e := setup(t)
+	ctx := ctxFor(t, "acme")
+	o, err := e.store.Create(ctx, storage.Object{Kind: "Cluster", Name: "c1", Labels: map[string]string{"env": "prod", "team": "payments"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _ := e.store.Get(ctx, "Cluster", "c1")
+	if got.Labels["env"] != "prod" || got.Labels["team"] != "payments" {
+		t.Fatalf("labels = %v", got.Labels)
+	}
+	upd, err := e.store.Update(ctx, storage.Object{Kind: "Cluster", Name: "c1", ResourceVersion: o.ResourceVersion, Labels: map[string]string{"env": "dev"}})
+	if err != nil || len(upd.Labels) != 1 || upd.Labels["env"] != "dev" {
+		t.Fatalf("update labels = %v, %v", upd.Labels, err)
+	}
+	none, _ := e.store.Create(ctx, storage.Object{Kind: "Cluster", Name: "c2"})
+	if none.Labels == nil || len(none.Labels) != 0 {
+		t.Fatalf("nil labels should round-trip as empty map, got %#v", none.Labels)
 	}
 }
