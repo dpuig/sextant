@@ -8,16 +8,20 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
 	"net/http"
+	"sync"
+	"time"
 
 	"github.com/dpuig/sextant/pkg/apis/v1alpha1"
 	"github.com/dpuig/sextant/pkg/registry"
 	"github.com/dpuig/sextant/pkg/storage"
 	"github.com/dpuig/sextant/pkg/tenancy"
+	"github.com/dpuig/sextant/pkg/tunnel"
 )
 
 const (
@@ -40,25 +44,60 @@ type Authorizer interface {
 	Authorize(p Principal, tenant tenancy.ID, verb, kind string) bool
 }
 
+// TokenIssuer mints single-use agent registration tokens (*storage.Tokens).
+type TokenIssuer interface {
+	Create(ctx context.Context, agent string, ttl time.Duration) (string, error)
+}
+
+// Agents reaches clusters through their agents' tunnels (*tunnel.Server).
+// The agent for a Cluster is the one whose name equals the Cluster's name.
+type Agents interface {
+	HasAgent(t tenancy.ID, agent string) bool
+	Dialer(t tenancy.ID, agent string) tunnel.Dialer
+}
+
+// Option enables optional routes.
+type Option func(*Handler)
+
+// WithTokens enables POST .../clusters/{name}/registration-tokens.
+func WithTokens(t TokenIssuer) Option { return func(h *Handler) { h.tokens = t } }
+
+// WithAgents enables ANY .../clusters/{name}/proxy/{path...}.
+func WithAgents(a Agents) Option { return func(h *Handler) { h.agents = a } }
+
 // Handler serves the API.
 type Handler struct {
-	reg   *registry.Registry
-	authn Authenticator
-	authz Authorizer
-	log   *slog.Logger
-	kinds map[string]v1alpha1.KindInfo // by plural
+	reg    *registry.Registry
+	authn  Authenticator
+	authz  Authorizer
+	log    *slog.Logger
+	kinds  map[string]v1alpha1.KindInfo // by plural
+	tokens TokenIssuer
+	agents Agents
+
+	proxies sync.Map // "tenant/agent" -> *httputil.ReverseProxy (cluster_routes.go)
 }
 
 // New returns the API handler. log may be nil.
-func New(reg *registry.Registry, authn Authenticator, authz Authorizer, log *slog.Logger) http.Handler {
+func New(reg *registry.Registry, authn Authenticator, authz Authorizer, log *slog.Logger, opts ...Option) http.Handler {
 	if log == nil {
 		log = slog.Default()
 	}
 	h := &Handler{reg: reg, authn: authn, authz: authz, log: log, kinds: map[string]v1alpha1.KindInfo{}}
+	for _, o := range opts {
+		o(h)
+	}
 	for _, k := range v1alpha1.Kinds() {
 		h.kinds[k.Plural] = k
 	}
 	mux := http.NewServeMux()
+	clusters := h.kinds["clusters"]
+	if h.tokens != nil {
+		mux.HandleFunc("POST "+basePath+"clusters/{name}/registration-tokens", h.serveFixed("create-registration-token", clusters, h.createToken))
+	}
+	if h.agents != nil {
+		mux.HandleFunc(basePath+"clusters/{name}/proxy/{rest...}", h.serveFixed("proxy", clusters, h.proxy))
+	}
 	mux.HandleFunc("GET "+basePath+"{plural}", h.serve("list", h.list))
 	mux.HandleFunc("POST "+basePath+"{plural}", h.serve("create", h.create))
 	mux.HandleFunc("GET "+basePath+"{plural}/{name}", h.serve("get", h.get))
@@ -70,8 +109,21 @@ func New(reg *registry.Registry, authn Authenticator, authz Authorizer, log *slo
 
 type handlerFunc func(w http.ResponseWriter, r *http.Request, kind v1alpha1.KindInfo) error
 
-// serve wraps an operation with authn, tenant parsing, authz and error mapping.
+// serve wraps a collection operation, resolving the kind from the {plural} path value.
 func (h *Handler) serve(verb string, fn handlerFunc) http.HandlerFunc {
+	return h.serveWith(verb, func(r *http.Request) (v1alpha1.KindInfo, bool) {
+		k, ok := h.kinds[r.PathValue("plural")]
+		return k, ok
+	}, fn)
+}
+
+// serveFixed wraps an operation on a fixed kind (custom sub-routes).
+func (h *Handler) serveFixed(verb string, kind v1alpha1.KindInfo, fn handlerFunc) http.HandlerFunc {
+	return h.serveWith(verb, func(*http.Request) (v1alpha1.KindInfo, bool) { return kind, true }, fn)
+}
+
+// serveWith applies authn, tenant parsing, authz and error mapping.
+func (h *Handler) serveWith(verb string, kindOf func(*http.Request) (v1alpha1.KindInfo, bool), fn handlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		p, err := h.authn.Authenticate(r)
@@ -84,7 +136,7 @@ func (h *Handler) serve(verb string, fn handlerFunc) http.HandlerFunc {
 			writeStatus(w, http.StatusBadRequest, "invalid organization")
 			return
 		}
-		kind, ok := h.kinds[r.PathValue("plural")]
+		kind, ok := kindOf(r)
 		if !ok {
 			writeStatus(w, http.StatusNotFound, "unknown resource")
 			return

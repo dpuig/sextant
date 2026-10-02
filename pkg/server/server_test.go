@@ -1,19 +1,26 @@
 package server_test
 
 import (
+	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
+	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/dpuig/sextant/pkg/registry"
 	"github.com/dpuig/sextant/pkg/server"
 	"github.com/dpuig/sextant/pkg/storage"
 	"github.com/dpuig/sextant/pkg/storage/storagetest"
 	"github.com/dpuig/sextant/pkg/tenancy"
+	"github.com/dpuig/sextant/pkg/tunnel"
 )
 
 const base = "/apis/sextant.andean.io/v1alpha1/organizations/"
@@ -209,5 +216,234 @@ func TestHTTPTenantIsolation(t *testing.T) {
 	list := decode(t, do(t, h, "GET", base+"globex/clusters", "tok-globex", ""))
 	if n := len(list["items"].([]any)); n != 0 {
 		t.Fatalf("globex sees %d acme clusters", n)
+	}
+}
+
+// --- cluster routes: registration tokens and the kube-apiserver proxy ---
+
+type fakeTokens struct {
+	mu      sync.Mutex
+	created []string
+}
+
+func (f *fakeTokens) Create(ctx context.Context, agent string, ttl time.Duration) (string, error) {
+	tid, err := tenancy.FromContext(ctx)
+	if err != nil {
+		return "", err
+	}
+	f.mu.Lock()
+	f.created = append(f.created, tid.String()+"/"+agent+"/"+ttl.String())
+	f.mu.Unlock()
+	return "sxt1." + tid.String() + ".secret", nil
+}
+
+// fakeAgents "tunnels" by dialing a local TCP address, whatever address is asked for.
+type fakeAgents struct {
+	connected map[string]bool // "tenant/agent"
+	target    string
+}
+
+func (f *fakeAgents) HasAgent(t tenancy.ID, a string) bool { return f.connected[t.String()+"/"+a] }
+func (f *fakeAgents) Dialer(tenancy.ID, string) tunnel.Dialer {
+	return func(ctx context.Context, network, _ string) (net.Conn, error) {
+		return (&net.Dialer{}).DialContext(ctx, network, f.target)
+	}
+}
+
+func newClusterHandler(t *testing.T, upstream http.Handler, connected ...string) (http.Handler, *fakeTokens) {
+	t.Helper()
+	up := httptest.NewServer(upstream)
+	t.Cleanup(up.Close)
+	ag := &fakeAgents{connected: map[string]bool{}, target: strings.TrimPrefix(up.URL, "http://")}
+	for _, c := range connected {
+		ag.connected[c] = true
+	}
+	tk := &fakeTokens{}
+	h := server.New(registry.New(storage.New(storagetest.NewPool(t))), auth, auth, nil, server.WithTokens(tk), server.WithAgents(ag))
+	return h, tk
+}
+
+func mkCluster(t *testing.T, h http.Handler, tenant, token, name string) {
+	t.Helper()
+	body := `{"metadata":{"name":"` + name + `"},"spec":{"environment":"prod"}}`
+	if rec := do(t, h, "POST", base+tenant+"/clusters", token, body); rec.Code != 201 {
+		t.Fatalf("create cluster: %d %s", rec.Code, rec.Body)
+	}
+}
+
+func TestRegistrationToken_IssuedOnceForExistingCluster(t *testing.T) {
+	h, tk := newClusterHandler(t, http.NotFoundHandler())
+	p := base + "acme/clusters/c1/registration-tokens"
+
+	if got := do(t, h, "POST", p, "tok-acme", "").Code; got != 404 {
+		t.Fatalf("token for missing cluster = %d, want 404", got)
+	}
+	mkCluster(t, h, "acme", "tok-acme", "c1")
+	rec := do(t, h, "POST", p, "tok-acme", "")
+	if rec.Code != 201 {
+		t.Fatalf("status %d: %s", rec.Code, rec.Body)
+	}
+	if m := decode(t, rec); m["token"] != "sxt1.acme.secret" || m["expiresAt"] == nil {
+		t.Fatalf("body = %v", m)
+	}
+	if rec.Header().Get("Cache-Control") != "no-store" {
+		t.Fatal("token response must not be cacheable")
+	}
+	if len(tk.created) != 1 || tk.created[0] != "acme/c1/1h0m0s" {
+		t.Fatalf("created = %v (default ttl should be 1h)", tk.created)
+	}
+}
+
+func TestRegistrationToken_TTLValidationAndAuthz(t *testing.T) {
+	h, _ := newClusterHandler(t, http.NotFoundHandler())
+	mkCluster(t, h, "acme", "tok-acme", "c1")
+	p := base + "acme/clusters/c1/registration-tokens"
+	for body, want := range map[string]int{
+		`{"ttlSeconds":600}`:        201,
+		`{"ttlSeconds":86400}`:      201,
+		`{"ttlSeconds":86401}`:      422,
+		`{"ttlSeconds":-5}`:         422,
+		`{"ttlSeconds":9223372037}`: 422, // seconds*1e9 wraps int64
+		`{"ttlSeconds":"x"}`:        422,
+		`{"surprise":1}`:            422,
+	} {
+		if got := do(t, h, "POST", p, "tok-acme", body).Code; got != want {
+			t.Errorf("body %s: status = %d, want %d", body, got, want)
+		}
+	}
+	if got := do(t, h, "POST", base+"acme/clusters/c1/registration-tokens", "tok-globex", "").Code; got != 403 {
+		t.Fatalf("other tenant = %d, want 403", got)
+	}
+	if got := do(t, h, "POST", p, "", "").Code; got != 401 {
+		t.Fatalf("anonymous = %d, want 401", got)
+	}
+}
+
+func TestRegistrationTokenRouteAbsentWithoutIssuer(t *testing.T) {
+	h := newHandler(t) // no WithTokens
+	if got := do(t, h, "POST", base+"acme/clusters/c1/registration-tokens", "tok-acme", "").Code; got == 201 || got == 200 {
+		t.Fatalf("route should not exist, got %d", got)
+	}
+}
+
+func TestProxy_ForwardsThroughTunnelWithoutCallerCredential(t *testing.T) {
+	var got struct {
+		sync.Mutex
+		path, query, auth, host string
+	}
+	h, _ := newClusterHandler(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got.Lock()
+		got.path, got.query, got.auth, got.host = r.URL.Path, r.URL.RawQuery, r.Header.Get("Authorization"), r.Host
+		got.Unlock()
+		_, _ = io.WriteString(w, `{"kind":"PodList"}`)
+	}), "acme/c1")
+	mkCluster(t, h, "acme", "tok-acme", "c1")
+
+	rec := do(t, h, "GET", base+"acme/clusters/c1/proxy/api/v1/namespaces/default/pods?limit=5", "tok-acme", "")
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), "PodList") {
+		t.Fatalf("%d %s", rec.Code, rec.Body)
+	}
+	got.Lock()
+	defer got.Unlock()
+	if got.path != "/api/v1/namespaces/default/pods" || got.query != "limit=5" {
+		t.Fatalf("cluster saw %q ? %q", got.path, got.query)
+	}
+	if got.auth != "" {
+		t.Fatalf("the caller's Sextant credential reached the cluster side: %q", got.auth)
+	}
+	if got.host != "kube-apiserver.sextant.internal:80" {
+		t.Fatalf("host = %q", got.host)
+	}
+}
+
+func TestProxy_AgentOfflineIs503_UnknownClusterIs404(t *testing.T) {
+	h, _ := newClusterHandler(t, http.NotFoundHandler()) // nobody connected
+	mkCluster(t, h, "acme", "tok-acme", "c1")
+	if got := do(t, h, "GET", base+"acme/clusters/c1/proxy/api", "tok-acme", "").Code; got != 503 {
+		t.Fatalf("offline = %d, want 503", got)
+	}
+	if got := do(t, h, "GET", base+"acme/clusters/ghost/proxy/api", "tok-acme", "").Code; got != 404 {
+		t.Fatalf("unknown cluster = %d, want 404", got)
+	}
+}
+
+func TestProxy_TenantIsolation(t *testing.T) {
+	// globex has an agent named c1 too; acme must never be routed to it, and
+	// globex's credentials must not reach acme's cluster.
+	h, _ := newClusterHandler(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = io.WriteString(w, "ok") }), "acme/c1", "globex/c1")
+	mkCluster(t, h, "acme", "tok-acme", "c1")
+	if got := do(t, h, "GET", base+"acme/clusters/c1/proxy/api", "tok-globex", "").Code; got != 403 {
+		t.Fatalf("globex token on acme cluster = %d, want 403", got)
+	}
+	// globex has the agent but no Cluster object of that name: 404, not a tunnel hit.
+	if got := do(t, h, "GET", base+"globex/clusters/c1/proxy/api", "tok-globex", "").Code; got != 404 {
+		t.Fatalf("agent without Cluster object = %d, want 404", got)
+	}
+}
+
+func TestProxy_StreamsWatchResponses(t *testing.T) {
+	release := make(chan struct{})
+	h, _ := newClusterHandler(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, "event-1\n")
+		w.(http.Flusher).Flush()
+		<-release
+	}), "acme/c1")
+	mkCluster(t, h, "acme", "tok-acme", "c1")
+	front := httptest.NewServer(h)
+	defer front.Close()
+
+	req, _ := http.NewRequest("GET", front.URL+base+"acme/clusters/c1/proxy/api/v1/pods?watch=true", nil)
+	req.Header.Set("Authorization", "Bearer tok-acme")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close(); close(release) }()
+	line := make(chan string, 1)
+	go func() { s, _ := bufio.NewReader(resp.Body).ReadString('\n'); line <- s }()
+	select {
+	case s := <-line:
+		if s != "event-1\n" {
+			t.Fatalf("line = %q", s)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("watch event was buffered")
+	}
+}
+
+// kubectl logs -f / get -w outlive any sane server WriteTimeout; the proxy
+// route must lift the deadline for itself while the rest keep it.
+func TestProxy_LongStreamsSurviveServerWriteTimeout(t *testing.T) {
+	release := make(chan struct{})
+	h, _ := newClusterHandler(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, "event-1\n")
+		w.(http.Flusher).Flush()
+		<-release
+		_, _ = io.WriteString(w, "event-2\n")
+	}), "acme/c1")
+	mkCluster(t, h, "acme", "tok-acme", "c1")
+
+	front := httptest.NewUnstartedServer(h)
+	front.Config.WriteTimeout = 300 * time.Millisecond
+	front.Config.ReadTimeout = 300 * time.Millisecond
+	front.Start()
+	defer front.Close()
+
+	req, _ := http.NewRequest("GET", front.URL+base+"acme/clusters/c1/proxy/api/v1/pods?watch=true", nil)
+	req.Header.Set("Authorization", "Bearer tok-acme")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	r := bufio.NewReader(resp.Body)
+	if s, _ := r.ReadString('\n'); s != "event-1\n" {
+		t.Fatalf("first line = %q", s)
+	}
+	time.Sleep(900 * time.Millisecond) // three WriteTimeouts later
+	close(release)
+	s, err := r.ReadString('\n')
+	if err != nil || s != "event-2\n" {
+		t.Fatalf("stream was cut by the server write timeout: line=%q err=%v", s, err)
 	}
 }

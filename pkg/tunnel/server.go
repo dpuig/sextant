@@ -9,6 +9,7 @@ import (
 	"crypto/x509"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/dpuig/sextant/pkg/pki"
 	"github.com/dpuig/sextant/pkg/tenancy"
@@ -42,6 +43,20 @@ func NewServer(revoker Revoker, log *slog.Logger) *Server {
 		http.Error(w, http.StatusText(code), code)
 	})
 	return s
+}
+
+// OnChange registers fn to be told when an agent gains its first session or
+// loses its last. fn runs on the connection's goroutine and must not block.
+// Call it before serving.
+func (s *Server) OnChange(fn func(tenant tenancy.ID, agent string, connected bool)) {
+	s.rd.OnSessionChange = func(key string, connected bool) {
+		tenant, agent, ok := strings.Cut(key, "/")
+		tid, err := tenancy.ParseID(tenant)
+		if !ok || err != nil {
+			return // not a key we minted
+		}
+		fn(tid, agent, connected)
+	}
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) { s.rd.ServeHTTP(w, r) }

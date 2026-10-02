@@ -500,3 +500,28 @@ func TestAgentHandlerServesVirtualAddressWithoutTCP(t *testing.T) {
 		t.Fatal("agent dialed a non-allowed address")
 	}
 }
+
+func TestServerOnChangeReportsTenantAndAgent(t *testing.T) {
+	e := newEnv(t, nil)
+	type ev struct {
+		tenant, agent string
+		connected     bool
+	}
+	var mu sync.Mutex
+	var events []ev
+	e.server.OnChange(func(tn tenancy.ID, agent string, connected bool) {
+		mu.Lock()
+		events = append(events, ev{tn.String(), agent, connected})
+		mu.Unlock()
+	})
+	_, cancel := e.startAgent(static(e.agentCert("acme", "c1", time.Hour)), targetAddr(e))
+	eventually(t, 5*time.Second, "connect event", func() bool { mu.Lock(); defer mu.Unlock(); return len(events) >= 1 })
+	cancel()
+	eventually(t, 5*time.Second, "disconnect event", func() bool { mu.Lock(); defer mu.Unlock(); return len(events) >= 2 })
+
+	mu.Lock()
+	defer mu.Unlock()
+	if events[0] != (ev{"acme", "c1", true}) || events[1] != (ev{"acme", "c1", false}) {
+		t.Fatalf("events = %+v", events)
+	}
+}

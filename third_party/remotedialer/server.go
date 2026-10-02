@@ -24,6 +24,12 @@ func DefaultErrorWriter(rw http.ResponseWriter, req *http.Request, code int, err
 }
 
 type Server struct {
+	// OnSessionChange (sextant patch) is called after a client's session is
+	// added or removed, with whether the client still has any live session.
+	// It runs on the connection's goroutine and must not block.
+	OnSessionChange func(clientKey string, connected bool)
+	notifyMu        sync.Mutex // orders OnSessionChange calls with the state they report
+
 	PeerID                  string
 	PeerToken               string
 	ClientConnectAuthorizer ConnectAuthorizer
@@ -70,7 +76,15 @@ func (s *Server) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 
 	session := s.sessions.add(clientKey, wsConn, peer)
 	session.auth = s.ClientConnectAuthorizer
-	defer s.sessions.remove(session)
+	if !peer {
+		s.notifySessionChange(clientKey)
+	}
+	defer func() {
+		s.sessions.remove(session)
+		if !peer {
+			s.notifySessionChange(clientKey)
+		}
+	}()
 
 	code, err := session.Serve(req.Context())
 	if err != nil {
@@ -103,4 +117,16 @@ func (s *Server) auth(req *http.Request) (clientKey string, authed, peer bool, e
 
 	id, authed, err = s.authorizer(req)
 	return id, authed, false, err
+}
+
+// notifySessionChange evaluates the state and delivers it under one lock, so
+// two connections of the same client cannot deliver their states out of order
+// (a stale "disconnected" landing after a newer "connected").
+func (s *Server) notifySessionChange(clientKey string) {
+	if s.OnSessionChange == nil {
+		return
+	}
+	s.notifyMu.Lock()
+	defer s.notifyMu.Unlock()
+	s.OnSessionChange(clientKey, s.HasSession(clientKey))
 }

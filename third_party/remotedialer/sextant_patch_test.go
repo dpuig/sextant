@@ -206,3 +206,77 @@ func waitFor(t *testing.T, what string, cond func() bool) {
 		time.Sleep(10 * time.Millisecond)
 	}
 }
+
+// Patch 5: OnSessionChange reports connect and disconnect, in order.
+func TestServerOnSessionChange(t *testing.T) {
+	quietLogs(t)
+	rd, ts := newPatchTestServer(t)
+	var mu sync.Mutex
+	var events []bool
+	rd.OnSessionChange = func(key string, connected bool) {
+		if key != "agent" {
+			t.Errorf("key = %q", key)
+		}
+		mu.Lock()
+		events = append(events, connected)
+		mu.Unlock()
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_ = ConnectToProxy(ctx, wsURL(ts), nil, func(string, string) bool { return true }, &websocket.Dialer{}, nil)
+	}()
+	waitFor(t, "connect event", func() bool { mu.Lock(); defer mu.Unlock(); return len(events) == 1 })
+	cancel()
+	<-done
+	waitFor(t, "disconnect event", func() bool { mu.Lock(); defer mu.Unlock(); return len(events) == 2 })
+	mu.Lock()
+	defer mu.Unlock()
+	if !events[0] || events[1] {
+		t.Fatalf("events = %v, want [true false]", events)
+	}
+}
+
+// A slow "disconnected" delivery must not land after the "connected" of a
+// reconnect that happened while it was in flight. Without serialising the
+// evaluate-and-deliver step, the stale false overwrites the newer true.
+func TestServerOnSessionChange_StaleDisconnectCannotOverwriteReconnect(t *testing.T) {
+	quietLogs(t)
+	rd, ts := newPatchTestServer(t)
+	var mu sync.Mutex
+	last := false
+	rd.OnSessionChange = func(_ string, connected bool) {
+		if !connected {
+			time.Sleep(150 * time.Millisecond) // a slow consumer (e.g. a database write)
+		}
+		mu.Lock()
+		last = connected
+		mu.Unlock()
+	}
+
+	connect := func() (cancel func(), done <-chan struct{}) {
+		ctx, c := context.WithCancel(context.Background())
+		d := make(chan struct{})
+		go func() {
+			defer close(d)
+			_ = ConnectToProxy(ctx, wsURL(ts), nil, func(string, string) bool { return true }, &websocket.Dialer{}, nil)
+		}()
+		return c, d
+	}
+
+	cancelA, doneA := connect()
+	waitFor(t, "A connected", func() bool { mu.Lock(); defer mu.Unlock(); return last })
+	cancelA()
+	<-doneA                     // A's session ends; its slow "false" is now in flight
+	cancelB, doneB := connect() // B reconnects while that delivery is still sleeping
+	defer func() { cancelB(); <-doneB }()
+	waitFor(t, "B registered", func() bool { return rd.HasSession("agent") })
+
+	time.Sleep(400 * time.Millisecond) // let every delivery finish
+	mu.Lock()
+	defer mu.Unlock()
+	if !last {
+		t.Fatal("stale 'disconnected' overwrote the newer 'connected': status would be wrong until the next event")
+	}
+}

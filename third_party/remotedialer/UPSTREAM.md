@@ -21,4 +21,7 @@ Each patch has a test in this directory (`sextant_patch_test.go`).
 4. **`Server.Disconnect(clientKey)`.** Closes a client's live sessions so credential
    revocation takes effect immediately, not at the next natural disconnect.
 
+5. **`Server.OnSessionChange`.** A callback fired after a client session is added or
+   removed, so the management plane can record cluster connectivity.
+
 Upstream these when practical; drop the patch when upstream ships the fix.
