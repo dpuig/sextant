@@ -1,7 +1,7 @@
 # Spec: Sextant Phase 0 — Foundations
 
 Source: `Implementation Plan AI-Native Multi-Cluster Control Plane.md` (Phase 0).
-Status: **DRAFT — awaiting human review.** No code until approved.
+Status: **Approved.** Moving to Phase 2 (Plan).
 
 ## Objective
 
@@ -31,7 +31,7 @@ tunnel are expensive to fix later, so Phase 0 exists to get them right.
 - Tunnel: vendored Rancher `remotedialer` + gRPC/HTTP/2 transport adaptation.
 - UI: TypeScript + React (`web/`), scaffold only in Phase 0.
 - Observability: OpenTelemetry (traces + metrics), OTLP export.
-- Delivery: Helm charts, GitHub Actions (assumed; see Open Questions), kind for e2e, cosign + syft (SBOM).
+- Delivery: Helm charts, GitHub Actions, kind for e2e, cosign + syft (SBOM).
 - Versions of every dependency get pinned when the first task lands. This spec does not invent them.
 
 ## Commands
@@ -140,7 +140,7 @@ resource without isolation coverage fails CI.
 
 1. **Monorepo & tooling.** Layout above builds and lints green from a clean checkout.
 2. **API model.** `Organization`, `Workspace`, `Environment`, `Cluster`, `AccessGrant` as `sextant.andean.io/v1alpha1`
-   (group name is a placeholder; see Open Questions). CRUD + watch via the apiserver, OpenAPI published, typed Go client generated.
+   (group name confirmed). CRUD + watch via the apiserver, OpenAPI published, typed Go client generated.
    Note: the plan lists `Organization`, `Cluster`, `Environment`, `AccessGrant`; `Workspace` is added because the
    tenancy model requires it.
 3. **Tenancy.** Hierarchy Organization → Workspace → Environment. `tenant_id` column on every table; tenant in
@@ -195,13 +195,18 @@ Exit gate from the plan, made testable:
 
 Per the plan: hold Phases 4–7 until the Phase 3 revenue gate passes.
 
+## Resolved Decisions (owner review, 2026-10-02)
+
+| Question | Resolution |
+|---|---|
+| CI provider | GitHub Actions |
+| Names | Go module `github.com/dpuig/sextant` and registry `ghcr.io/dpuig/sextant/*`, both taken from git remote `origin` (`git@github.com:dpuig/sextant.git`). The directory is already a git repo. |
+| Licence | Proprietary for now. `third_party/remotedialer` stays Apache-2.0 with its LICENSE/NOTICE kept. Add a `LICENSE` file stating proprietary terms in Task 1. |
+| Agent cert TTL | 24h, rotate at 50% of lifetime |
+| Postgres for self-hosted chart | BYO Postgres is the supported production path (DSN via Secret). An optional CloudNativePG subchart is provided for eval/dev, off by default. |
+| Phase 0 scale target | 500 concurrent agents per apiserver replica, used by the load/chaos tests |
+| Team | Solo plus agents. Tasks are sequenced serially, and low-tier tasks (Makefile, CI scaffold, docs, UI scaffold) can be delegated per the escalation ladder. High-tier tasks are done inline. |
+
 ## Open Questions
 
-1. **CI provider:** GitHub Actions assumed. Correct?
-2. **Names:** API group (`sextant.andean.io`?), Go module path, container registry (`ghcr.io/andean-products/...`?).
-3. **Repo hosting:** create a GitHub repo now? (Directory is not yet a git repo.)
-4. **Licensing** of the codebase, which matters for the vendored `remotedialer` (Apache-2.0): proprietary, open-core, or OSS?
-5. **Agent cert TTL:** is 24h with rotation at 50% acceptable, or do you want shorter (e.g. 1h)?
-6. **Postgres deployment** for the self-hosted Helm chart: bundled (CloudNativePG/Bitnami) or BYO only?
-7. **Scale target** for Phase 0 load tests: how many simultaneous agents should one apiserver replica handle (proposal: 500)?
-8. **Team:** are the 7 roles in the plan's team shape staffed, or is this solo plus agents? This changes how I'd sequence parallel tasks.
+None. API group confirmed as `sextant.andean.io` (2026-10-02).

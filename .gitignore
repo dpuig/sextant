@@ -1,0 +1,5 @@
+bin/
+cover.out
+node_modules/
+web/dist/
+*.key
