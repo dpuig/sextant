@@ -7,7 +7,6 @@ package tunnel
 import (
 	"crypto/tls"
 	"crypto/x509"
-	"errors"
 	"log/slog"
 	"net/http"
 
@@ -51,7 +50,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) { s.rd.ServeH
 // The key embeds the tenant, so Dial can only ever reach a tenant's own agents.
 func (s *Server) authorize(r *http.Request) (string, bool, error) {
 	if r.TLS == nil || len(r.TLS.VerifiedChains) == 0 {
-		return "", false, errors.New("no verified client certificate")
+		return "", false, nil // unauthenticated -> 401 (an error would map to 400)
 	}
 	leaf := r.TLS.VerifiedChains[0][0]
 	tid, agent, err := pki.ParseAgentIdentity(leaf)
@@ -86,14 +85,18 @@ func (s *Server) Dialer(t tenancy.ID, agent string) Dialer {
 	return s.rd.Dialer(sessionKey(t, agent))
 }
 
-// ServerTLSConfig requires and verifies client certificates against root.
+// ServerTLSConfig verifies any client certificate presented against root, but
+// does not demand one at the TLS layer: the same listener also serves the
+// token-gated /v1/enroll, which agents call before they have a certificate.
+// The tunnel route itself refuses connections without a verified certificate
+// (see authorize), and /v1/renew does the same.
 func ServerTLSConfig(cert tls.Certificate, root *x509.Certificate) *tls.Config {
 	pool := x509.NewCertPool()
 	pool.AddCert(root)
 	return &tls.Config{
 		MinVersion:   tls.VersionTLS13,
 		Certificates: []tls.Certificate{cert},
-		ClientAuth:   tls.RequireAndVerifyClientCert,
+		ClientAuth:   tls.VerifyClientCertIfGiven,
 		ClientCAs:    pool,
 	}
 }

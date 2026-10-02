@@ -444,3 +444,16 @@ func TestAgentBacksOffAgainstFlappingServer(t *testing.T) {
 		t.Fatalf("%d attempts in 2.5s; want backoff to keep this between 2 and 12", attempts)
 	}
 }
+
+func TestTunnelRouteRefusesConnectionsWithoutClientCertificate(t *testing.T) {
+	e := newEnv(t, nil)
+	c := &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{RootCAs: e.pool, MinVersion: tls.VersionTLS13}}}
+	resp, err := c.Get(e.mp.URL + "/connect")
+	if err != nil {
+		t.Fatalf("TLS handshake without client cert should succeed (enroll needs it): %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401", resp.StatusCode)
+	}
+}

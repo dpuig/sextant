@@ -5,6 +5,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/rsa"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"net/url"
@@ -223,5 +224,25 @@ func TestParseAgentIdentity_RejectsNonAgentCerts(t *testing.T) {
 				t.Fatal("expected rejection")
 			}
 		})
+	}
+}
+
+func TestAgentCert_RejectsWeakOrUnsupportedKeys(t *testing.T) {
+	a := newAuthority(t, time.Now())
+	ca, _ := a.IssueTenantCA(context.Background(), tenant(t, "acme"), time.Hour*24)
+	rsaKey, _ := rsa.GenerateKey(rand.Reader, 1024)
+	rsaCSR, _ := x509.CreateCertificateRequest(rand.Reader, &x509.CertificateRequest{}, rsaKey)
+	if _, err := ca.IssueAgentCert(rsaCSR, "c1", time.Hour); err == nil {
+		t.Fatal("1024-bit RSA key accepted")
+	}
+	p224, _ := ecdsa.GenerateKey(elliptic.P224(), rand.Reader)
+	p224CSR, _ := x509.CreateCertificateRequest(rand.Reader, &x509.CertificateRequest{}, p224)
+	if _, err := ca.IssueAgentCert(p224CSR, "c1", time.Hour); err == nil {
+		t.Fatal("P-224 key accepted")
+	}
+	p384, _ := ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
+	p384CSR, _ := x509.CreateCertificateRequest(rand.Reader, &x509.CertificateRequest{}, p384)
+	if _, err := ca.IssueAgentCert(p384CSR, "c1", time.Hour); err != nil {
+		t.Fatalf("P-384 should be accepted: %v", err)
 	}
 }

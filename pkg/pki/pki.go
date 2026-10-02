@@ -8,6 +8,7 @@ import (
 	"context"
 	"crypto"
 	"crypto/ecdsa"
+	"crypto/ed25519"
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/x509"
@@ -142,6 +143,9 @@ func (c *TenantCA) IssueAgentCert(csrDER []byte, agentName string, ttl time.Dura
 	if err := req.CheckSignature(); err != nil {
 		return nil, fmt.Errorf("pki: csr signature: %w", err)
 	}
+	if err := CheckPublicKey(req.PublicKey); err != nil {
+		return nil, err
+	}
 	serial, err := newSerial()
 	if err != nil {
 		return nil, err
@@ -204,4 +208,17 @@ func ParseAgentIdentity(cert *x509.Certificate) (tenancy.ID, string, error) {
 		return tenancy.ID{}, "", errors.New("pki: identity path is not /agent/<name>")
 	}
 	return tid, name, nil
+}
+
+// CheckPublicKey accepts only ECDSA P-256/P-384 and Ed25519 public keys.
+func CheckPublicKey(pub any) error {
+	switch k := pub.(type) {
+	case *ecdsa.PublicKey:
+		if k.Curve == elliptic.P256() || k.Curve == elliptic.P384() {
+			return nil
+		}
+	case ed25519.PublicKey:
+		return nil
+	}
+	return errors.New("pki: unsupported public key (want ECDSA P-256/P-384 or Ed25519)")
 }
