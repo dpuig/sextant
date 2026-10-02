@@ -34,3 +34,7 @@ pg-down:
 
 test-integration: pg-up
 	SEXTANT_TEST_PG_DSN=postgres://postgres:test@localhost:$(PG_PORT)/postgres go test ./pkg/storage/... -race -count=1
+
+.PHONY: bench-tunnel
+bench-tunnel:
+	SEXTANT_SPIKE=1 go test ./spikes/tunnel -v -count=1
