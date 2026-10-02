@@ -3,3 +3,6 @@ linters:
   enable:
     - errorlint
     - contextcheck
+  exclusions:
+    paths:
+      - third_party

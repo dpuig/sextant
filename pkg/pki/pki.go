@@ -17,6 +17,7 @@ import (
 	"math/big"
 	"net/url"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/dpuig/sextant/pkg/tenancy"
@@ -177,4 +178,30 @@ func newSerial() (*big.Int, error) {
 		return nil, fmt.Errorf("pki: serial: %w", err)
 	}
 	return n, nil
+}
+
+// ParseAgentIdentity extracts the tenant and agent name from a certificate
+// issued by IssueAgentCert. It accepts exactly one sextant:// URI SAN of the
+// form sextant://<tenant>.tenants.sextant.internal/agent/<name> and rejects
+// anything else, so a certificate that is merely trusted but not an agent
+// identity can never authenticate as one. Chain verification is the caller's
+// (TLS layer's) job; this only reads the identity.
+func ParseAgentIdentity(cert *x509.Certificate) (tenancy.ID, string, error) {
+	if len(cert.URIs) != 1 {
+		return tenancy.ID{}, "", fmt.Errorf("pki: want exactly one URI SAN, got %d", len(cert.URIs))
+	}
+	u := cert.URIs[0]
+	tenantStr, ok := strings.CutSuffix(u.Host, "."+tenantDomain)
+	if u.Scheme != "sextant" || !ok || u.RawQuery != "" || u.Fragment != "" || u.User != nil {
+		return tenancy.ID{}, "", errors.New("pki: not a sextant agent identity")
+	}
+	tid, err := tenancy.ParseID(tenantStr)
+	if err != nil {
+		return tenancy.ID{}, "", fmt.Errorf("pki: identity tenant: %w", err)
+	}
+	name, ok := strings.CutPrefix(u.EscapedPath(), "/agent/")
+	if !ok || !agentNamePattern.MatchString(name) {
+		return tenancy.ID{}, "", errors.New("pki: identity path is not /agent/<name>")
+	}
+	return tid, name, nil
 }

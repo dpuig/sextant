@@ -23,8 +23,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dpuig/sextant/third_party/remotedialer"
 	"github.com/gorilla/websocket"
-	"github.com/rancher/remotedialer"
 	"github.com/sirupsen/logrus"
 )
 

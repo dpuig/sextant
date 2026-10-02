@@ -1,6 +1,6 @@
 # ADR 0002: Tunnel approach
 
-Status: accepted for fork; transport divergence **proposed, needs owner sign-off**. 2026-10-02.
+Status: accepted, including the WebSocket transport (owner sign-off 2026-10-02).
 
 ## Context
 
@@ -45,7 +45,7 @@ recording the base commit and each local patch (1 and 2 above), keep its
 Apache-2.0 LICENSE, and wrap it in `pkg/tunnel` so the rest of the codebase
 never imports it directly. Add a CI test for each patch.
 
-## Proposed divergence from the spec (needs sign-off)
+## Divergence from the original spec (approved)
 
 The spec says "outbound gRPC over mTLS with HTTP/2 multiplexing".
 `remotedialer` is **WebSocket (HTTP/1.1 upgrade) with its own stream
@@ -55,3 +55,17 @@ WebSocket traverses corporate HTTP proxies, which matters for the "outbound
 only, behind NAT" customers. Switching to gRPC would mean writing the tunnel,
 which the spec says not to do. If gRPC/HTTP2 is a hard requirement, say so and
 we re-plan.
+
+## Outcome (implemented)
+
+- Patches 1 and 2 applied in `third_party/remotedialer` (see `UPSTREAM.md`), each with a test
+  that fails on the unpatched code. The full vendored suite passes under `-race`.
+- Liveness defaults: ping every 5 s, declare the peer dead after 15 s.
+  **Silent-partition recovery measured at 15 s (was 60 s)**; restart reconnect ~0.1 s.
+- `pkg/tunnel` wraps the fork: mTLS (TLS 1.3, client certs required), session key
+  derived from the verified certificate's tenant + agent name (so a tenant can only
+  ever dial its own agents), certificate revocation hook, agent allow-list limited to
+  one address (the local kube-apiserver), jittered backoff capped at 5 s, and a
+  certificate provider consulted on every reconnect (rotation without restart).
+- Still open: re-measure G3 in a real region; registration-token exchange and the
+  automatic rotation loop; the agent's proxy to the local kube-apiserver.

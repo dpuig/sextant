@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"net/url"
 	"testing"
 	"time"
 
@@ -180,5 +181,47 @@ func TestTenantCA_NotAfterCappedAtRoot(t *testing.T) {
 	}
 	if ca.Cert.NotAfter.After(ca.Root.NotAfter) {
 		t.Fatalf("tenant CA NotAfter %v exceeds root %v", ca.Cert.NotAfter, ca.Root.NotAfter)
+	}
+}
+
+func TestParseAgentIdentity_RoundTrip(t *testing.T) {
+	a := newAuthority(t, time.Now())
+	ca, _ := a.IssueTenantCA(context.Background(), tenant(t, "acme"), time.Hour*24)
+	der, _ := ca.IssueAgentCert(csr(t), "cluster-1", time.Hour)
+	leaf, _ := x509.ParseCertificate(der)
+	tid, name, err := pki.ParseAgentIdentity(leaf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tid.String() != "acme" || name != "cluster-1" {
+		t.Fatalf("got %q %q", tid, name)
+	}
+}
+
+func TestParseAgentIdentity_RejectsNonAgentCerts(t *testing.T) {
+	mk := func(uris ...string) *x509.Certificate {
+		c := &x509.Certificate{}
+		for _, u := range uris {
+			p, _ := url.Parse(u)
+			c.URIs = append(c.URIs, p)
+		}
+		return c
+	}
+	for name, c := range map[string]*x509.Certificate{
+		"no uri":           mk(),
+		"wrong scheme":     mk("https://acme.tenants.sextant.internal/agent/c1"),
+		"wrong domain":     mk("sextant://acme.example.com/agent/c1"),
+		"bad tenant":       mk("sextant://Acme.tenants.sextant.internal/agent/c1"),
+		"not an agent":     mk("sextant://acme.tenants.sextant.internal/user/c1"),
+		"bad agent name":   mk("sextant://acme.tenants.sextant.internal/agent/a%2Fb"),
+		"extra path":       mk("sextant://acme.tenants.sextant.internal/agent/c1/x"),
+		"two identities":   mk("sextant://acme.tenants.sextant.internal/agent/c1", "sextant://globex.tenants.sextant.internal/agent/c1"),
+		"nested subdomain": mk("sextant://x.acme.tenants.sextant.internal/agent/c1"),
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, _, err := pki.ParseAgentIdentity(c); err == nil {
+				t.Fatal("expected rejection")
+			}
+		})
 	}
 }

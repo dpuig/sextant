@@ -19,7 +19,7 @@ tunnel are expensive to fix later, so Phase 0 exists to get them right.
 | Decision | Choice |
 |---|---|
 | API server | Plain aggregated-style apiserver backed by Postgres (kine-style). Not kcp. |
-| Tunnel | Fork/vendor Rancher `remotedialer`, adapted to mTLS + HTTP/2 multiplexing. |
+| Tunnel | Fork/vendor Rancher `remotedialer` (mTLS WebSocket with its own stream multiplexing; amended from gRPC/HTTP2, see ADR 0002). |
 | PKI / KMS | `Signer` interface with local-file and Vault implementations. Cloud KMS adapters deferred. |
 | Scope | Phase 0 in depth; Phases 1–7 outlined only (see end). |
 
@@ -28,7 +28,7 @@ tunnel are expensive to fix later, so Phase 0 exists to get them right.
 - Backend, agent, CLI: Go (latest stable at kickoff; pinned in `go.mod`, with `toolchain` directive).
 - API machinery: `k8s.io/apiserver`, `k8s.io/apimachinery`, `controller-runtime`; codegen via `controller-gen` / `client-gen` / `openapi-gen`.
 - Storage: PostgreSQL (system of record), kine-style storage layer. NATS JetStream for events.
-- Tunnel: vendored Rancher `remotedialer` + gRPC/HTTP/2 transport adaptation.
+- Tunnel: vendored Rancher `remotedialer` (WebSocket over mTLS, library-level multiplexing; ADR 0002), with local patches listed in `third_party/remotedialer/UPSTREAM.md`.
 - UI: TypeScript + React (`web/`), scaffold only in Phase 0.
 - Observability: OpenTelemetry (traces + metrics), OTLP export.
 - Delivery: Helm charts, GitHub Actions, kind for e2e, cosign + syft (SBOM).
@@ -148,7 +148,7 @@ resource without isolation coverage fails CI.
    behind application checks.
 4. **Storage/events.** Postgres migrations (versioned, forward-only, tested up from empty). JetStream stream per concern,
    subjects namespaced by tenant: `sextant.<tenant>.<kind>.<event>`.
-5. **Agent tunnel.** Agent dials out over mTLS; server multiplexes requests over HTTP/2; the agent proxies authenticated
+5. **Agent tunnel.** Agent dials out over mTLS (WebSocket, multiplexed by remotedialer); the agent only dials its allow-listed local kube-apiserver address and proxies authenticated
    requests to the local kube-apiserver using its in-cluster ServiceAccount. Registration: one-time token → short-lived
    client cert (default TTL 24h, rotation at 50% of lifetime, no restart needed).
 6. **PKI.** `pki.Signer` interface; local-file (dev/CI) and Vault (self-hosted) implementations; per-tenant intermediate CAs;
@@ -163,7 +163,7 @@ Exit gate from the plan, made testable:
 
 - [ ] **G1 Install:** on a fresh kind cluster, `helm install sextant-agent` with a registration token results in `Cluster.status.connected=true`
       within 60 s, with the kind node behind a network that blocks all inbound traffic.
-- [ ] **G2 Resilience:** killing the apiserver pod (and separately, a full management-plane rollout restart) does not require operator action;
+- [ ] **G2 Resilience** (incl. silent partitions: dead-peer detection 15 s + reconnect backoff ≤ 5 s): killing the apiserver pod (and separately, a full management-plane rollout restart) does not require operator action;
       the agent shows reconnected within **30 s** in 20/20 consecutive runs.
 - [ ] **G3 Latency:** `kubectl get pods` through the tunnel against kind, in-region, adds **p95 < 50 ms** over direct access across ≥1,000 requests
       (`make bench-tunnel`).
