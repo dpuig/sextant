@@ -1,0 +1,41 @@
+{{- include "sextant-agent.validate" . -}}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "sextant-agent.fullname" . }}
+  labels: {{- include "sextant-agent.labels" . | nindent 4 }}
+---
+# The only thing the agent needs for itself: read and replace its own
+# credentials Secret. Not create (Kubernetes cannot restrict create by name),
+# which is why the chart ships the Secret empty (below).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "sextant-agent.fullname" . }}
+  labels: {{- include "sextant-agent.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: [secrets]
+    resourceNames: [{{ include "sextant-agent.credentialsSecret" . }}]
+    verbs: [get, update]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "sextant-agent.fullname" . }}
+  labels: {{- include "sextant-agent.labels" . | nindent 4 }}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: {{ include "sextant-agent.fullname" . }}}
+subjects:
+  - {kind: ServiceAccount, name: {{ include "sextant-agent.fullname" . }}, namespace: {{ .Release.Namespace }}}
+{{- if .Values.rbac.accessClusterRole }}
+---
+# What the management plane can do in this cluster through the agent.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "sextant-agent.fullname" . }}-{{ .Release.Namespace }}-access
+  labels: {{- include "sextant-agent.labels" . | nindent 4 }}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: {{ .Values.rbac.accessClusterRole }}}
+subjects:
+  - {kind: ServiceAccount, name: {{ include "sextant-agent.fullname" . }}, namespace: {{ .Release.Namespace }}}
+{{- end }}

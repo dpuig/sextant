@@ -1,0 +1,80 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "sextant.fullname" . }}
+  labels: {{- include "sextant.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels: {{- include "sextant.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "sextant.selectorLabels" . | nindent 8 }}
+      annotations:
+        {{- with .Values.podAnnotations }}{{ toYaml . | nindent 8 }}{{- end }}
+    spec:
+      serviceAccountName: {{ include "sextant.fullname" . }}
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: apiserver
+          image: {{ include "sextant.image" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - serve
+            - --listen=0.0.0.0:8443
+            - --tls-cert=/etc/sextant/tls/tls.crt
+            - --tls-key=/etc/sextant/tls/tls.key
+            - --pki-root-cert=/etc/sextant/pki/root.crt
+            - --pki-root-key=/etc/sextant/pki/root.key
+            {{- if .Values.dev.enabled }}
+            - --dev-tenant={{ .Values.dev.tenant }}
+            - --dev-insecure-allow-remote
+            {{- end }}
+          env:
+            # Secrets reach the process through the environment, never flags.
+            - name: SEXTANT_DATABASE_URL
+              valueFrom:
+                secretKeyRef: {name: {{ .Values.database.existingSecret }}, key: {{ .Values.database.appDSNKey }}}
+            {{- if .Values.dev.enabled }}
+            - name: SEXTANT_DEV_TOKEN
+              valueFrom:
+                secretKeyRef: {name: {{ .Values.dev.tokenSecret }}, key: token}
+            {{- end }}
+          ports:
+            - {name: https, containerPort: 8443}
+          readinessProbe:
+            tcpSocket: {port: https}
+            periodSeconds: 5
+          livenessProbe:
+            tcpSocket: {port: https}
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          resources: {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - {name: tls, mountPath: /etc/sextant/tls, readOnly: true}
+            - {name: pki, mountPath: /etc/sextant/pki, readOnly: true}
+      volumes:
+        - name: tls
+          secret: {secretName: {{ .Values.tls.existingSecret }}}
+        - name: pki
+          secret:
+            secretName: {{ .Values.pki.existingSecret }}
+            defaultMode: 0400
+      {{- with .Values.nodeSelector }}
+      nodeSelector: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity: {{- toYaml . | nindent 8 }}
+      {{- end }}

@@ -87,6 +87,7 @@ func serve(ctx context.Context, args []string) error {
 	certFile := fs.String("tls-cert", "", "TLS certificate file")
 	keyFile := fs.String("tls-key", "", "TLS key file")
 	devTenant := fs.String("dev-tenant", "", "DEV ONLY: tenant that SEXTANT_DEV_TOKEN grants full access to")
+	devRemote := fs.Bool("dev-insecure-allow-remote", false, "DEV ONLY: allow --dev-tenant on a non-loopback address (requires TLS)")
 	rootCert := fs.String("pki-root-cert", "", "root CA certificate; with --pki-root-key and TLS, enables agent enrollment and tunnels")
 	rootKey := fs.String("pki-root-key", "", "root CA private key file (local-file signer; dev/CI)")
 	if err := fs.Parse(args); err != nil {
@@ -99,7 +100,7 @@ func serve(ctx context.Context, args []string) error {
 	if tls && (*certFile == "" || *keyFile == "") {
 		return errors.New("--tls-cert and --tls-key must be set together")
 	}
-	if err := checkListen(*listen, tls, *devTenant != ""); err != nil {
+	if err := checkListen(*listen, tls, *devTenant != "", *devRemote); err != nil {
 		return err
 	}
 
@@ -130,7 +131,7 @@ func serve(ctx context.Context, args []string) error {
 			return fmt.Errorf("SEXTANT_DEV_TOKEN: %w", err)
 		}
 		authn, authz = sa, sa
-		slog.Warn("DEV AUTH ENABLED: a static token grants full access to one tenant", "tenant", tid)
+		slog.Warn("DEV AUTH ENABLED: a static token grants full access to one tenant", "tenant", tid, "remote", *devRemote)
 	} else {
 		slog.Warn("no authentication configured: every request will be denied")
 	}
@@ -192,22 +193,25 @@ func serve(ctx context.Context, args []string) error {
 }
 
 // checkListen refuses configurations that would expose plaintext HTTP or the
-// dev token beyond the local machine.
-func checkListen(addr string, tls, dev bool) error {
-	if tls && !dev {
-		return nil
-	}
+// dev token beyond the local machine. The dev token is allowed off-loopback
+// only with TLS and the explicit devRemote hazard flag (for test rigs such as
+// kind, where the pod must listen on all interfaces).
+func checkListen(addr string, tls, dev, devRemote bool) error {
 	host, _, err := net.SplitHostPort(addr)
 	if err != nil {
 		return fmt.Errorf("--listen: %w", err)
 	}
-	if ip := net.ParseIP(host); host == "localhost" || (ip != nil && ip.IsLoopback()) {
+	ip := net.ParseIP(host)
+	loopback := host == "localhost" || (ip != nil && ip.IsLoopback())
+	switch {
+	case loopback:
 		return nil
+	case dev && (!tls || !devRemote):
+		return errors.New("dev auth is only allowed on a loopback --listen address (or with TLS and --dev-insecure-allow-remote)")
+	case !tls:
+		return errors.New("plain HTTP is only allowed on a loopback --listen address; set --tls-cert and --tls-key")
 	}
-	if dev {
-		return errors.New("dev auth is only allowed on a loopback --listen address")
-	}
-	return errors.New("plain HTTP is only allowed on a loopback --listen address; set --tls-cert and --tls-key")
+	return nil
 }
 
 type denyAuthn struct{}

@@ -1,0 +1,34 @@
+image:
+  repository: ghcr.io/dpuig/sextant/agent
+  tag: ""            # defaults to the chart appVersion
+  pullPolicy: IfNotPresent
+
+# https://host[:port] of the Sextant management plane. The agent only ever
+# dials out; no inbound port is opened on this cluster.
+managementURL: ""
+
+# PEM CA bundle that signed the management plane's server certificate.
+# Leave empty to trust the system roots.
+serverCA: ""
+
+registration:
+  # One-time token from POST .../clusters/{name}/registration-tokens. Needed for
+  # the first start only; the agent then keeps its credentials in a Secret and
+  # the token (and this Secret) can be removed.
+  token: ""          # creates a Secret from the value (prefer existingSecret)
+  existingSecret: "" # Secret with key `token`, used instead of `token`
+
+rbac:
+  # What the agent's service account may do in THIS cluster, and therefore what
+  # the management plane can do through it. Phase 0 has no per-user
+  # impersonation, so this is the ceiling for everyone using the proxy.
+  accessClusterRole: view
+
+resources:
+  requests: {cpu: 20m, memory: 32Mi}
+  limits: {memory: 128Mi}
+
+podAnnotations: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}

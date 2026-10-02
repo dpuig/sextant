@@ -1,0 +1,59 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "sextant-agent.fullname" . }}
+  labels: {{- include "sextant-agent.labels" . | nindent 4 }}
+spec:
+  replicas: 1   # one agent per cluster; two would race on the credentials Secret
+  strategy: {type: Recreate}
+  selector:
+    matchLabels: {{- include "sextant-agent.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "sextant-agent.selectorLabels" . | nindent 8 }}
+      annotations:
+        {{- with .Values.podAnnotations }}{{ toYaml . | nindent 8 }}{{- end }}
+    spec:
+      serviceAccountName: {{ include "sextant-agent.fullname" . }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: agent
+          image: {{ include "sextant-agent.image" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            - {name: SEXTANT_MANAGEMENT_URL, value: {{ .Values.managementURL | quote }}}
+            - {name: SEXTANT_CREDENTIALS_SECRET, value: {{ include "sextant-agent.credentialsSecret" . | quote }}}
+            {{- if .Values.serverCA }}
+            - {name: SEXTANT_SERVER_CA_FILE, value: /etc/sextant/ca/ca.crt}
+            {{- end }}
+            # Optional: only needed until the agent has enrolled.
+            - name: SEXTANT_REGISTRATION_TOKEN
+              valueFrom:
+                secretKeyRef: {name: {{ include "sextant-agent.tokenSecret" . }}, key: token, optional: true}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          resources: {{- toYaml .Values.resources | nindent 12 }}
+          {{- if .Values.serverCA }}
+          volumeMounts:
+            - {name: ca, mountPath: /etc/sextant/ca, readOnly: true}
+          {{- end }}
+      {{- if .Values.serverCA }}
+      volumes:
+        - name: ca
+          configMap: {name: {{ include "sextant-agent.fullname" . }}-ca}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity: {{- toYaml . | nindent 8 }}
+      {{- end }}

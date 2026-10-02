@@ -1,0 +1,8 @@
+Sextant management plane installed.
+
+  Agents connect to:  https://{{ include "sextant.fullname" . }}.{{ .Release.Namespace }}.svc:{{ .Values.service.port }}
+{{- if .Values.dev.enabled }}
+
+  WARNING: dev authentication is enabled. A static token grants full access to
+  tenant "{{ .Values.dev.tenant }}". Do not use this outside a test rig.
+{{- end }}

@@ -54,9 +54,41 @@ func (s FileStore) Load() (*Credentials, error) {
 	if err != nil {
 		return nil, err
 	}
+	return decodeCredentials(data)
+}
+
+// Save writes the credentials atomically (temp file + rename).
+func (s FileStore) Save(c *Credentials) error {
+	if err := os.MkdirAll(s.Dir, 0o700); err != nil {
+		return err
+	}
+	out, err := encodeCredentials(c)
+	if err != nil {
+		return err
+	}
+	return writeAtomic(s.path(), out, 0o600)
+}
+
+// encodeCredentials renders the key then the chain as PEM.
+func encodeCredentials(c *Credentials) ([]byte, error) {
+	kb, err := x509.MarshalECPrivateKey(c.Key)
+	if err != nil {
+		return nil, err
+	}
+	out := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: kb})
+	for _, der := range c.Chain {
+		out = append(out, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})...)
+	}
+	return out, nil
+}
+
+// decodeCredentials parses encodeCredentials output and verifies that the
+// certificate belongs to the key.
+func decodeCredentials(data []byte) (*Credentials, error) {
 	var (
 		key   *ecdsa.PrivateKey
 		chain [][]byte
+		err   error
 	)
 	for rest := data; ; {
 		var b *pem.Block
@@ -74,7 +106,7 @@ func (s FileStore) Load() (*Credentials, error) {
 		}
 	}
 	if key == nil || len(chain) == 0 {
-		return nil, errors.New("agent: credentials file is missing the key or certificate")
+		return nil, errors.New("agent: credentials are missing the key or certificate")
 	}
 	c := &Credentials{Key: key, Chain: chain}
 	leaf, err := c.Leaf()
@@ -85,22 +117,6 @@ func (s FileStore) Load() (*Credentials, error) {
 		return nil, errors.New("agent: stored certificate does not match stored key")
 	}
 	return c, nil
-}
-
-// Save writes the credentials atomically (temp file + rename).
-func (s FileStore) Save(c *Credentials) error {
-	if err := os.MkdirAll(s.Dir, 0o700); err != nil {
-		return err
-	}
-	kb, err := x509.MarshalECPrivateKey(c.Key)
-	if err != nil {
-		return err
-	}
-	out := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: kb})
-	for _, der := range c.Chain {
-		out = append(out, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})...)
-	}
-	return writeAtomic(s.path(), out, 0o600)
 }
 
 func writeAtomic(path string, data []byte, mode os.FileMode) error {

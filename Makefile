@@ -38,3 +38,16 @@ test-integration: pg-up
 .PHONY: bench-tunnel
 bench-tunnel:
 	SEXTANT_SPIKE=1 go test ./spikes/tunnel -v -count=1
+
+ARCH ?= $(shell go env GOARCH)
+REGISTRY ?= ghcr.io/dpuig/sextant
+IMAGE_TAG ?= $(VERSION)
+
+.PHONY: dist images
+dist:
+	@mkdir -p dist/linux-$(ARCH)
+	CGO_ENABLED=0 GOOS=linux GOARCH=$(ARCH) go build -trimpath -ldflags "$(LDFLAGS)" -o dist/linux-$(ARCH)/ ./cmd/apiserver ./cmd/agent
+
+images: dist
+	$(CONTAINER) build --platform linux/$(ARCH) -f deploy/docker/Dockerfile.apiserver --build-arg DIST=dist/linux-$(ARCH) -t $(REGISTRY)/apiserver:$(IMAGE_TAG) .
+	$(CONTAINER) build --platform linux/$(ARCH) -f deploy/docker/Dockerfile.agent --build-arg DIST=dist/linux-$(ARCH) -t $(REGISTRY)/agent:$(IMAGE_TAG) .

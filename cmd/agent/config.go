@@ -19,6 +19,10 @@ type config struct {
 	kubeAPI       *url.URL
 	kubeCAFile    string
 	kubeTokenFile string
+	// credentialsSecret, when set, stores credentials in this Secret (in
+	// namespace) instead of stateDir, so they survive pod restarts.
+	credentialsSecret string
+	namespace         string
 }
 
 // tunnelURL is where the agent dials the tunnel (wss://host/connect).
@@ -40,11 +44,13 @@ func parseConfig(args []string, getenv func(string) string, readFile func(string
 	kubeAPI := fs.String("kube-api", getenv("SEXTANT_KUBE_API"), "kube-apiserver URL (default: in-cluster)")
 	kubeCA := fs.String("kube-ca-file", orDefault(getenv("SEXTANT_KUBE_CA_FILE"), saDir+"/ca.crt"), "kube-apiserver CA file")
 	kubeToken := fs.String("kube-token-file", orDefault(getenv("SEXTANT_KUBE_TOKEN_FILE"), saDir+"/token"), "service account token file")
+	secret := fs.String("credentials-secret", getenv("SEXTANT_CREDENTIALS_SECRET"), "store credentials in this Secret instead of --state-dir")
+	ns := fs.String("namespace", getenv("SEXTANT_NAMESPACE"), "namespace of the credentials Secret (default: the pod's namespace)")
 	if err := fs.Parse(args); err != nil {
 		return nil, err
 	}
 
-	c := &config{serverCAFile: *serverCA, stateDir: *state, kubeCAFile: *kubeCA, kubeTokenFile: *kubeToken}
+	c := &config{credentialsSecret: *secret, namespace: *ns, serverCAFile: *serverCA, stateDir: *state, kubeCAFile: *kubeCA, kubeTokenFile: *kubeToken}
 
 	if *mgmt == "" {
 		return nil, errors.New("--management-url (or SEXTANT_MANAGEMENT_URL) is required")
@@ -66,6 +72,14 @@ func parseConfig(args []string, getenv func(string) string, readFile func(string
 		c.kubeAPI = &url.URL{Scheme: "https", Host: joinHostPort(host, port)}
 	default:
 		return nil, errors.New("not running in a cluster: set --kube-api")
+	}
+
+	if c.credentialsSecret != "" && c.namespace == "" {
+		b, err := readFile(saDir + "/namespace")
+		if err != nil || strings.TrimSpace(string(b)) == "" {
+			return nil, errors.New("--credentials-secret needs a namespace: set --namespace (the pod namespace file is unreadable)")
+		}
+		c.namespace = strings.TrimSpace(string(b))
 	}
 
 	// The token file wins over the environment variable; either may be absent

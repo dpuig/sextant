@@ -111,3 +111,32 @@ func TestTunnelURL(t *testing.T) {
 		}
 	}
 }
+
+func TestParseConfig_CredentialsSecretNamespaceResolution(t *testing.T) {
+	base := map[string]string{"SEXTANT_MANAGEMENT_URL": "https://mp.example.com", "KUBERNETES_SERVICE_HOST": "10.0.0.1", "SEXTANT_CREDENTIALS_SECRET": "creds"}
+	podNS := func(p string) ([]byte, error) {
+		if p == saDir+"/namespace" {
+			return []byte("sextant-system\n"), nil
+		}
+		return nil, errors.New("no")
+	}
+	c, err := parseConfig(nil, env(base), podNS)
+	if err != nil || c.namespace != "sextant-system" || c.credentialsSecret != "creds" {
+		t.Fatalf("namespace=%q secret=%q err=%v", c.namespace, c.credentialsSecret, err)
+	}
+	if _, err := parseConfig(nil, env(base), noFiles); err == nil {
+		t.Fatal("secret without any resolvable namespace accepted")
+	}
+	withNS := map[string]string{"SEXTANT_NAMESPACE": "explicit"}
+	for k, v := range base {
+		withNS[k] = v
+	}
+	if c, err := parseConfig(nil, env(withNS), noFiles); err != nil || c.namespace != "explicit" {
+		t.Fatalf("explicit namespace: %q %v", c.namespace, err)
+	}
+	// Without a secret, no namespace is needed.
+	delete(base, "SEXTANT_CREDENTIALS_SECRET")
+	if _, err := parseConfig(nil, env(base), noFiles); err != nil {
+		t.Fatalf("file-backed config should not need a namespace: %v", err)
+	}
+}

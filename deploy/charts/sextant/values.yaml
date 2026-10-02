@@ -1,0 +1,51 @@
+image:
+  repository: ghcr.io/dpuig/sextant/apiserver
+  tag: ""            # defaults to the chart appVersion
+  pullPolicy: IfNotPresent
+
+# One replica per tunnel endpoint; agents reconnect to whichever replica answers.
+replicaCount: 1
+
+database:
+  # Secret holding two keys (BYO Postgres):
+  #   app-dsn    connection string for the non-owner role sextant_app (what serve uses)
+  #   owner-dsn  connection string for the schema owner (used only by the migrate job)
+  existingSecret: ""
+  appDSNKey: app-dsn
+  ownerDSNKey: owner-dsn
+
+tls:
+  # kubernetes.io/tls Secret (tls.crt, tls.key) for the single listener that
+  # serves the API, agent enrollment and the tunnel.
+  existingSecret: ""
+
+pki:
+  # Secret with root.crt and root.key (local-file signer: dev/CI only, create it
+  # with `apiserver pki init`). A Vault-backed root is not implemented yet.
+  existingSecret: ""
+
+service:
+  type: ClusterIP
+  port: 8443
+  nodePort: null     # only with type NodePort
+
+migrate:
+  enabled: true      # run `apiserver migrate` as a pre-install/pre-upgrade hook
+
+# DEV ONLY. A static bearer token granting full access to one tenant, until the
+# identity broker (Phase 2) exists. Exposed beyond loopback only because the
+# pod must listen on all interfaces; TLS is mandatory.
+dev:
+  enabled: false
+  iUnderstandThisIsInsecure: false
+  tenant: ""
+  tokenSecret: ""    # Secret with key `token` (>= 16 bytes)
+
+resources:
+  requests: {cpu: 100m, memory: 128Mi}
+  limits: {memory: 512Mi}
+
+podAnnotations: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}

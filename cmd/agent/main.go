@@ -53,8 +53,14 @@ func run(ctx context.Context, args []string) error {
 		return fmt.Errorf("system cert pool: %w", err)
 	}
 
-	mgr := agent.NewManager(&agent.Client{BaseURL: cfg.managementURL.String(), Roots: roots},
-		agent.FileStore{Dir: cfg.stateDir}, cfg.token, log)
+	var store agent.Store = agent.FileStore{Dir: cfg.stateDir}
+	if cfg.credentialsSecret != "" {
+		store, err = agent.NewSecretStore(cfg.kubeAPI, cfg.kubeCAFile, cfg.kubeTokenFile, cfg.namespace, cfg.credentialsSecret)
+		if err != nil {
+			return err
+		}
+	}
+	mgr := agent.NewManager(&agent.Client{BaseURL: cfg.managementURL.String(), Roots: roots}, store, cfg.token, log)
 	if err := mgr.Init(ctx); err != nil {
 		return err
 	}

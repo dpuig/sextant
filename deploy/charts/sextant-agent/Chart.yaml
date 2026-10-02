@@ -1,0 +1,6 @@
+apiVersion: v2
+name: sextant-agent
+description: "Sextant agent: one outbound mTLS tunnel from this cluster to the management plane"
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
