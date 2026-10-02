@@ -29,6 +29,12 @@ service:
   port: 8443
   nodePort: null     # only with type NodePort
 
+# After SIGTERM the pod keeps serving this long before it drops agent tunnels and
+# stops, so the Service endpoints can move to the replacement pod first. Without
+# it, agents' first reconnect after a rolling restart can hang on a dead endpoint.
+shutdownDelay: 5s
+terminationGracePeriodSeconds: 30
+
 migrate:
   enabled: true      # run `apiserver migrate` as a pre-install/pre-upgrade hook
 

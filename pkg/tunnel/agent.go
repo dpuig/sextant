@@ -28,6 +28,7 @@ const (
 	// server that accepts the connection and drops it immediately would make
 	// every agent reconnect at the minimum interval forever.
 	healthyAfter = 10 * time.Second
+	dialTimeout  = 5 * time.Second
 )
 
 // SetLiveness configures dead-peer detection for all tunnel sessions in this
@@ -87,6 +88,9 @@ func (a *Agent) Connected() bool { return a.connected.Load() }
 func (a *Agent) Run(ctx context.Context) error {
 	dialer := &websocket.Dialer{
 		HandshakeTimeout: 10 * time.Second,
+		// Bound the TCP connect on its own: a blackholed endpoint (e.g. a pod that
+		// just left the Service) must cost seconds, not the whole handshake budget.
+		NetDialContext: (&net.Dialer{Timeout: dialTimeout}).DialContext,
 		TLSClientConfig: &tls.Config{
 			MinVersion: tls.VersionTLS13,
 			RootCAs:    a.cfg.Roots,

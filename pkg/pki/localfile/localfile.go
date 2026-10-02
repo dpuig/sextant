@@ -63,8 +63,11 @@ func Load(certPath, keyPath string) (*Root, error) {
 	if err != nil {
 		return nil, err
 	}
-	if fi.Mode().Perm()&0o077 != 0 {
-		return nil, fmt.Errorf("localfile: key %s has mode %v; must be 0600", keyPath, fi.Mode().Perm())
+	// Group-read is allowed: Kubernetes mounts Secret volumes root:<fsGroup>, so
+	// a non-root pod can only read its key through its group. Group-write and
+	// any access by others are not.
+	if fi.Mode().Perm()&0o027 != 0 {
+		return nil, fmt.Errorf("localfile: key %s has mode %v; must not be group-writable or accessible to others", keyPath, fi.Mode().Perm())
 	}
 	certPEM, err := os.ReadFile(certPath)
 	if err != nil {

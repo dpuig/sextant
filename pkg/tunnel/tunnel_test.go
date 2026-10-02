@@ -525,3 +525,26 @@ func TestServerOnChangeReportsTenantAndAgent(t *testing.T) {
 		t.Fatalf("events = %+v", events)
 	}
 }
+
+// On shutdown the management plane drops every tunnel first, so agents move to
+// the replacement pod at once instead of staying attached to a dying one
+// (measured: ~10s of dead data plane per restart otherwise).
+func TestDisconnectAllDropsEveryAgentAndTheyReconnect(t *testing.T) {
+	e := newEnv(t, nil)
+	a1, _ := e.startAgent(static(e.agentCert("acme", "c1", time.Hour)), targetAddr(e))
+	a2, _ := e.startAgent(static(e.agentCert("globex", "c2", time.Hour)), targetAddr(e))
+	eventually(t, 5*time.Second, "both connected", func() bool { return a1.Connected() && a2.Connected() })
+
+	if n := e.server.DisconnectAll(); n != 2 {
+		t.Fatalf("DisconnectAll = %d, want 2", n)
+	}
+	eventually(t, 5*time.Second, "both dropped", func() bool { return !a1.Connected() && !a2.Connected() })
+	// The server is still serving (a real shutdown would stop it next), so the agents come back.
+	eventually(t, 10*time.Second, "both reconnected", func() bool { return a1.Connected() && a2.Connected() })
+}
+
+func TestDisconnectAllWithNoAgentsIsZero(t *testing.T) {
+	if n := tunnel.NewServer(nil, quiet).DisconnectAll(); n != 0 {
+		t.Fatalf("DisconnectAll = %d on an empty server", n)
+	}
+}

@@ -27,3 +27,17 @@ jobs:
       - uses: golangci/golangci-lint-action@v8
         with:
           version: v2.11
+
+  e2e:
+    # Phase 0 exit gates against two kind clusters (G1 install, G2 restart, G3 kubectl through the tunnel).
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: helm/kind-action@v1
+        with:
+          install_only: true   # the test creates its own two clusters
+      - run: make e2e CONTAINER=docker

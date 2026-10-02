@@ -352,3 +352,43 @@ func TestAgent_SingleReplicaRecreate_NoPortsOpened(t *testing.T) {
 		t.Fatal("the agent chart must not expose anything")
 	}
 }
+
+// A non-root pod can only read Secret-mounted keys through its fsGroup; without
+// it the apiserver crash-loops with "permission denied" (found by the e2e run).
+func TestManagementPlane_PodCanReadMountedKeys(t *testing.T) {
+	objs := must(t, "./"+mp, mpRequired...)
+	dep := find(objs, "Deployment", "sextant")
+	if dig(dep, "spec", "template", "spec", "securityContext", "fsGroup") != float64(65532) {
+		t.Fatal("pod needs fsGroup so the non-root user can read Secret volumes")
+	}
+	for _, v := range dig(dep, "spec", "template", "spec", "volumes").([]any) {
+		if dig(v, "name") != "pki" && dig(v, "name") != "tls" {
+			continue
+		}
+		// YAML 0440 is octal -> 288 decimal in the rendered JSON.
+		if mode := dig(v, "secret", "defaultMode"); mode != float64(0o440) {
+			t.Fatalf("key volume %v mode = %v, want 0440 (group-read for fsGroup, none for others)", dig(v, "name"), mode)
+		}
+	}
+}
+
+// A rolling restart without a shutdown delay stranded agents for ~10s (found by
+// the e2e run); the delay must be on, and shorter than the grace period.
+func TestManagementPlane_ShutdownDelayFitsInsideGracePeriod(t *testing.T) {
+	objs := must(t, "./"+mp, mpRequired...)
+	dep := find(objs, "Deployment", "sextant")
+	c := dig(dep, "spec", "template", "spec", "containers").([]any)[0].(map[string]any)
+	var delay string
+	for _, a := range c["args"].([]any) {
+		if v, ok := strings.CutPrefix(a.(string), "--shutdown-delay="); ok {
+			delay = v
+		}
+	}
+	if delay == "" || delay == "0s" {
+		t.Fatalf("shutdown delay = %q; rolling restarts will strand agents", delay)
+	}
+	grace := dig(dep, "spec", "template", "spec", "terminationGracePeriodSeconds")
+	if grace != float64(30) {
+		t.Fatalf("terminationGracePeriodSeconds = %v", grace)
+	}
+}

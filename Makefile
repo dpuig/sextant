@@ -51,3 +51,10 @@ dist:
 images: dist
 	$(CONTAINER) build --platform linux/$(ARCH) -f deploy/docker/Dockerfile.apiserver --build-arg DIST=dist/linux-$(ARCH) -t $(REGISTRY)/apiserver:$(IMAGE_TAG) .
 	$(CONTAINER) build --platform linux/$(ARCH) -f deploy/docker/Dockerfile.agent --build-arg DIST=dist/linux-$(ARCH) -t $(REGISTRY)/agent:$(IMAGE_TAG) .
+
+.PHONY: e2e
+# Needs kind, helm, kubectl and a container runtime (CONTAINER=podman|docker). Builds images tagged e2e, then runs the
+# Phase 0 gates against two kind clusters. SEXTANT_E2E_KEEP=1 leaves them up.
+e2e:
+	$(MAKE) images IMAGE_TAG=e2e
+	SEXTANT_E2E_CONTAINER=$(CONTAINER) go test -tags e2e ./test/e2e -run TestPhase0Gates -v -count=1 -timeout 30m

@@ -49,6 +49,27 @@ func TestLoad_RejectsLooseKeyPermissions(t *testing.T) {
 	}
 }
 
+// Kubernetes mounts Secret volumes root:<fsGroup> with the requested mode, so a
+// non-root pod can only read its key if group-read is allowed.
+func TestLoad_ModePolicy(t *testing.T) {
+	for mode, wantOK := range map[os.FileMode]bool{
+		0o600: true, 0o400: true, 0o440: true, // owner-only, or group-read (Secret volumes)
+		0o640: true,
+		0o660: false, 0o620: false, // group-write
+		0o644: false, 0o604: false, 0o601: false, 0o444: false, // any access by others
+	} {
+		dir := t.TempDir()
+		r, _ := Generate("test-root")
+		cert, key := filepath.Join(dir, "root.crt"), filepath.Join(dir, "root.key")
+		_ = r.Save(cert, key)
+		_ = os.Chmod(key, mode)
+		_, err := Load(cert, key)
+		if (err == nil) != wantOK {
+			t.Errorf("mode %v: err = %v, want ok=%v", mode, err, wantOK)
+		}
+	}
+}
+
 func TestLoad_RejectsMismatchedKey(t *testing.T) {
 	dir := t.TempDir()
 	a, _ := Generate("a")

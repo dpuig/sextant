@@ -94,6 +94,18 @@ func (s *Server) Disconnect(t tenancy.ID, agent string) int {
 	return s.rd.Disconnect(sessionKey(t, agent))
 }
 
+// DisconnectAll drops every live agent session and returns how many it closed.
+// Call it when shutting down: agents then reconnect to a replacement
+// immediately, instead of staying attached to a pod that is about to exit
+// while the Service already routes new connections elsewhere.
+func (s *Server) DisconnectAll() int {
+	n := 0
+	for _, key := range s.rd.ListClients() {
+		n += s.rd.Disconnect(key)
+	}
+	return n
+}
+
 // Dialer returns a dialer that reaches addresses through the named agent of
 // tenant t. It fails (at dial time) if that agent is not connected.
 func (s *Server) Dialer(t tenancy.ID, agent string) Dialer {

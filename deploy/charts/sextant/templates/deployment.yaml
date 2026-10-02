@@ -15,10 +15,14 @@ spec:
     spec:
       serviceAccountName: {{ include "sextant.fullname" . }}
       automountServiceAccountToken: false
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
       securityContext:
         runAsNonRoot: true
         runAsUser: 65532
         runAsGroup: 65532
+        # Secret volumes are root:fsGroup; without this the non-root process
+        # cannot read the TLS key or the PKI root key.
+        fsGroup: 65532
         seccompProfile: {type: RuntimeDefault}
       containers:
         - name: apiserver
@@ -31,6 +35,7 @@ spec:
             - --tls-key=/etc/sextant/tls/tls.key
             - --pki-root-cert=/etc/sextant/pki/root.crt
             - --pki-root-key=/etc/sextant/pki/root.key
+            - --shutdown-delay={{ .Values.shutdownDelay }}
             {{- if .Values.dev.enabled }}
             - --dev-tenant={{ .Values.dev.tenant }}
             - --dev-insecure-allow-remote
@@ -64,11 +69,13 @@ spec:
             - {name: pki, mountPath: /etc/sextant/pki, readOnly: true}
       volumes:
         - name: tls
-          secret: {secretName: {{ .Values.tls.existingSecret }}}
+          secret:
+            secretName: {{ .Values.tls.existingSecret }}
+            defaultMode: 0440
         - name: pki
           secret:
             secretName: {{ .Values.pki.existingSecret }}
-            defaultMode: 0400
+            defaultMode: 0440   # group-read for fsGroup; no access for others
       {{- with .Values.nodeSelector }}
       nodeSelector: {{- toYaml . | nindent 8 }}
       {{- end }}

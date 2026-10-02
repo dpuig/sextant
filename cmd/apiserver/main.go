@@ -87,6 +87,7 @@ func serve(ctx context.Context, args []string) error {
 	certFile := fs.String("tls-cert", "", "TLS certificate file")
 	keyFile := fs.String("tls-key", "", "TLS key file")
 	devTenant := fs.String("dev-tenant", "", "DEV ONLY: tenant that SEXTANT_DEV_TOKEN grants full access to")
+	shutdownDelay := fs.Duration("shutdown-delay", 0, "keep serving this long after SIGTERM before draining tunnels and stopping (lets Service endpoints update during rolling restarts)")
 	devRemote := fs.Bool("dev-insecure-allow-remote", false, "DEV ONLY: allow --dev-tenant on a non-loopback address (requires TLS)")
 	rootCert := fs.String("pki-root-cert", "", "root CA certificate; with --pki-root-key and TLS, enables agent enrollment and tunnels")
 	rootKey := fs.String("pki-root-key", "", "root CA private key file (local-file signer; dev/CI)")
@@ -151,7 +152,7 @@ func serve(ctx context.Context, args []string) error {
 	if root != nil {
 		pkiRoot = root
 	}
-	handler, stop := buildHandler(ctx, pool, authn, authz, pkiRoot, slog.Default())
+	handler, drain, stop := buildHandler(ctx, pool, authn, authz, pkiRoot, slog.Default())
 	defer stop()
 
 	srv := &http.Server{
@@ -186,9 +187,18 @@ func serve(ctx context.Context, args []string) error {
 	case err := <-errc:
 		return err
 	case <-ctx.Done():
-		shutdown, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
-		defer cancel()
-		return srv.Shutdown(shutdown)
+		// A second signal cuts the delay short (the first was consumed by ctx).
+		sig := make(chan os.Signal, 1)
+		signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
+		defer signal.Stop(sig)
+		interrupt := make(chan struct{})
+		go func() { <-sig; close(interrupt) }()
+		return shutdownSequence(*shutdownDelay, interrupt, drain, func() error {
+			// The budget starts now, after the delay, not when the signal arrived.
+			shutdown, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+			defer cancel()
+			return srv.Shutdown(shutdown)
+		})
 	}
 }
 
@@ -223,22 +233,31 @@ func (denyAuthn) Authenticate(*http.Request) (server.Principal, error) {
 // buildHandler assembles the management plane's HTTP surface. With a PKI root
 // it also serves agent enrollment (/v1/) and the tunnel (/connect) and keeps
 // Cluster.status in step with agent connectivity; without one it is the API
-// alone. The returned func stops background work.
-func buildHandler(ctx context.Context, pool *pgxpool.Pool, authn server.Authenticator, authz server.Authorizer, root pki.Root, log *slog.Logger) (http.Handler, func()) {
+// alone. drain drops every agent tunnel (call it first on shutdown); stop ends
+// background work (call it last).
+func buildHandler(ctx context.Context, pool *pgxpool.Pool, authn server.Authenticator, authz server.Authorizer, root pki.Root, log *slog.Logger) (handler http.Handler, drain, stop func()) {
 	reg := registry.New(storage.New(pool))
 	tokens := storage.NewTokens(pool)
 	opts := []server.Option{server.WithTokens(tokens)}
 	mux := http.NewServeMux()
-	stop := func() {}
+	stop = func() {}
+	drain = func() {}
 
 	if root != nil {
 		tun := tunnel.NewServer(nil, log)
 		tracker := controllers.NewConnectionTracker(reg, log)
 		tun.OnChange(tracker.OnChange)
-		tctx, cancel := context.WithCancel(ctx)
+		// Not tied to the signal context: the tracker must keep recording agent
+		// connectivity through the shutdown delay and drain; stop() ends it.
+		tctx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 		done := make(chan struct{})
 		go func() { tracker.Run(tctx); close(done) }()
 		stop = func() { cancel(); <-done }
+		drain = func() {
+			if n := tun.DisconnectAll(); n > 0 {
+				log.Info("shutting down: dropped agent tunnels so they reconnect elsewhere", "sessions", n)
+			}
+		}
 
 		cas := pki.NewTenantCAs(pki.NewAuthority(root), 7*24*time.Hour)
 		mux.Handle("/connect", tun)
@@ -246,7 +265,7 @@ func buildHandler(ctx context.Context, pool *pgxpool.Pool, authn server.Authenti
 		opts = append(opts, server.WithAgents(tun))
 	}
 	mux.Handle("/", server.New(reg, authn, authz, log, opts...))
-	return mux, stop
+	return mux, drain, stop
 }
 
 // pkiCmd implements `apiserver pki init --dir DIR`.
@@ -280,4 +299,24 @@ func pkiCmd(args []string) error {
 	}
 	fmt.Println("wrote", certPath, "and", keyPath)
 	return nil
+}
+
+// shutdownSequence is the order that keeps agents connected through a rolling
+// restart: keep serving for delay (the Service endpoints are updated
+// asynchronously after SIGTERM, so a reconnect during that window must still
+// find a listener), then drop the tunnels so agents reconnect to the
+// replacement, then stop. http.Server.Shutdown ignores hijacked (websocket)
+// connections, so any agent that slipped back onto this pod while it was
+// stopping is dropped once more afterwards. interrupt cuts the delay short.
+func shutdownSequence(delay time.Duration, interrupt <-chan struct{}, drain func(), shutdown func() error) error {
+	if delay > 0 {
+		select {
+		case <-time.After(delay):
+		case <-interrupt:
+		}
+	}
+	drain()
+	err := shutdown()
+	drain()
+	return err
 }

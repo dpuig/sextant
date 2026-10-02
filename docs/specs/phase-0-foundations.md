@@ -210,3 +210,21 @@ Per the plan: hold Phases 4–7 until the Phase 3 revenue gate passes.
 ## Open Questions
 
 None. API group confirmed as `sextant.andean.io` (2026-10-02).
+
+## Progress (2026-10-02)
+
+Evidence for each gate is in `docs/testing/e2e.md` (`make e2e`, two kind clusters).
+
+| Gate | Status |
+|---|---|
+| G1 install | Met on kind: `helm install` -> enrolled -> `status.connected` in ~1 s; agent opens no ports. (Not yet exercised through a real NAT.) |
+| G2 resilience | Met on kind: longest data-plane gap ~0.15 s across 3 management-plane rollouts; silent-partition detection 15 s (vendored-library test). |
+| G3 latency | Protocol overhead only: added p95 ~0.5 ms same-host. **Open:** re-measure in a real region against the 50 ms gate. |
+| G4 isolation | Partial: storage RLS, registry, HTTP and tunnel isolation tests exist; the generated per-resource/verb suite does not. |
+| G5 identity | Met in tests: single-use token, expiry, rotation, revocation (hook + `Disconnect`; no revocation store yet). |
+| G6 supply chain | Not started (cosign, SBOM). |
+| G7 observability | Not started (OpenTelemetry). |
+| G8 hygiene | Lint/vet/race-clean; Phase 0 threat model not yet written. |
+
+Not started: Vault `Signer`, watch/events (NATS), generated isolation suite, cosign/SBOM,
+OpenTelemetry, threat model.

@@ -76,7 +76,7 @@ func newFullStack(t *testing.T) *fullStack {
 	}
 	acme, _ := tenancy.ParseID("acme")
 	sa, _ := server.NewStaticAuth(devToken, acme)
-	handler, stop := buildHandler(context.Background(), pool, sa, sa, root, quiet)
+	handler, _, stop := buildHandler(context.Background(), pool, sa, sa, root, quiet)
 	t.Cleanup(stop)
 
 	cert, leaf := serverCert(t)
@@ -218,7 +218,7 @@ func TestBuildHandler_WithoutPKIHasNoTunnelOrEnrollment(t *testing.T) {
 	pool := storagetest.NewPool(t)
 	acme, _ := tenancy.ParseID("acme")
 	sa, _ := server.NewStaticAuth(devToken, acme)
-	h, stop := buildHandler(context.Background(), pool, sa, sa, nil, quiet)
+	h, _, stop := buildHandler(context.Background(), pool, sa, sa, nil, quiet)
 	defer stop()
 	for _, path := range []string{"/connect", "/v1/enroll", "/v1/renew"} {
 		rec := httptest.NewRecorder()
