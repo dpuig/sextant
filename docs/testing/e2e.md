@@ -1,6 +1,6 @@
 # End-to-end tests
 
-`make e2e` runs the Phase 0 exit gates against two real kind clusters:
+`make e2e` runs the Foundations (F0) exit gates against two real kind clusters:
 `sextant-e2e-mp` (management plane + Postgres) and `sextant-e2e-wl` (a workload
 cluster running the agent). Needs `kind`, `helm`, `kubectl` and a container
 runtime (`CONTAINER=podman` by default, `docker` in CI). `SEXTANT_E2E_KEEP=1`
@@ -29,7 +29,7 @@ events and logs from both clusters before deleting them.
 - **Not run in CI yet.** The `e2e` job in `.github/workflows/ci.yml` is untested
   (it uses docker + kind on a GitHub runner); expect a first-run fix or two.
 - The database role `sextant_app` is created out of band (as it would be in a real
-  deployment), and the dev bearer token stands in for the identity broker (Phase 2).
+  deployment), and the dev bearer token stands in for the identity broker (E2).
 
 ## Findings this suite produced
 

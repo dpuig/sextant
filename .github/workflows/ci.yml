@@ -4,6 +4,26 @@ on:
     branches: [main]
   pull_request:
 jobs:
+  dco:
+    # Every commit in a pull request must carry a Signed-off-by trailer (see CONTRIBUTING.md).
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Check sign-offs
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          fail=0
+          for sha in $(git rev-list --no-merges "$BASE..$HEAD"); do
+            if ! git log -1 --format=%B "$sha" | grep -qE '^Signed-off-by: .+ <.+@.+>$'; then
+              echo "::error::commit $sha is missing a Signed-off-by line (git commit -s)"; fail=1
+            fi
+          done
+          exit $fail
   go:
     runs-on: ubuntu-latest
     services:

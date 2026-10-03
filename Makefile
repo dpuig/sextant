@@ -54,7 +54,12 @@ images: dist
 
 .PHONY: e2e
 # Needs kind, helm, kubectl and a container runtime (CONTAINER=podman|docker). Builds images tagged e2e, then runs the
-# Phase 0 gates against two kind clusters. SEXTANT_E2E_KEEP=1 leaves them up.
+# Foundations (F0) gates against two kind clusters. SEXTANT_E2E_KEEP=1 leaves them up.
 e2e:
 	$(MAKE) images IMAGE_TAG=e2e
 	SEXTANT_E2E_CONTAINER=$(CONTAINER) go test -tags e2e ./test/e2e -run TestPhase0Gates -v -count=1 -timeout 30m
+
+.PHONY: licenses
+# Regenerates docs/third-party-licenses.md and fails on copyleft or unrecognised licences.
+licenses:
+	python3 hack/licenses.py

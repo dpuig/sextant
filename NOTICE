@@ -1,0 +1,13 @@
+Sextant
+Copyright 2026 Daniel Puig and the Sextant contributors
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+This product includes software developed by third parties:
+
+- Rancher remotedialer (https://github.com/rancher/remotedialer), Apache-2.0,
+  Copyright Rancher Labs, Inc. A modified copy is vendored in third_party/remotedialer;
+  the local changes are listed in third_party/remotedialer/UPSTREAM.md.
+
+Licences of all other Go dependencies shipped in our binaries are listed in
+docs/third-party-licenses.md (regenerate with `make licenses`).

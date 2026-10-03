@@ -3,5 +3,9 @@
 FROM gcr.io/distroless/static-debian12:nonroot
 ARG DIST
 COPY ${DIST}/apiserver /apiserver
+LABEL org.opencontainers.image.licenses="Apache-2.0" \
+      org.opencontainers.image.source="https://github.com/dpuig/sextant" \
+      org.opencontainers.image.title="sextant-apiserver"
+COPY LICENSE NOTICE /licenses/
 USER 65532:65532
 ENTRYPOINT ["/apiserver"]

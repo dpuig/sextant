@@ -20,8 +20,8 @@ import (
 //
 // Whatever Authorization or Impersonate-* headers the caller sent are
 // discarded, so the management plane cannot make the agent act as anyone but
-// itself, whatever RBAC the agent's service account happens to hold. Phase 2
-// will add deliberate impersonation here, set by the broker.
+// itself, whatever RBAC the agent's service account happens to hold. E2 will
+// add deliberate impersonation here, set by the broker.
 func NewKubeProxy(apiURL *url.URL, caFile, tokenFile string, log *slog.Logger) (http.Handler, error) {
 	if apiURL == nil || apiURL.Scheme != "https" {
 		return nil, errors.New("agent: kube-apiserver URL must be https")

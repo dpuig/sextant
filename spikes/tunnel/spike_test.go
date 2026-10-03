@@ -1,4 +1,4 @@
-// Spike: measure remotedialer against the Phase 0 exit gates.
+// Spike: measure remotedialer against the Foundations (F0) exit gates.
 //
 //	G2: agent reconnects within 30 s after management-plane restart
 //	G3: added p95 latency < 50 ms

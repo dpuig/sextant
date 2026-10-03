@@ -1,0 +1,14 @@
+# Review ownership. Security-sensitive paths are listed explicitly so a change to them can never merge unreviewed
+# once branch protection requires code-owner review.
+*                          @dpuig
+/pkg/pki/                  @dpuig
+/pkg/tenancy/              @dpuig
+/pkg/storage/              @dpuig
+/pkg/enroll/               @dpuig
+/pkg/tunnel/               @dpuig
+/pkg/agent/                @dpuig
+/third_party/              @dpuig
+/deploy/charts/            @dpuig
+/.github/workflows/        @dpuig
+/LICENSE                   @dpuig
+/SECURITY.md               @dpuig

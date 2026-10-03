@@ -1,6 +1,6 @@
-# ADR 0001: API server shape for Phase 0
+# ADR 0001: API server shape for Foundations
 
-Status: accepted (2026-10-02). Supersedes nothing. Revisit at the end of Phase 1.
+Status: accepted (2026-10-02). Supersedes nothing. Revisit before E3, when server inventory becomes the first heavy consumer of OpenAPI and watch.
 
 ## Context
 
@@ -11,7 +11,7 @@ aggregated server brings discovery, OpenAPI, watch, server-side apply and
 
 ## Decision
 
-Phase 0 ships a small `net/http` server (`pkg/server`) with Kubernetes-style
+Foundations ships a small `net/http` server (`pkg/server`) with Kubernetes-style
 paths and JSON (`/apis/sextant.andean.io/v1alpha1/organizations/{org}/{plural}`),
 over a typed registry (`pkg/registry`) and Postgres store (`pkg/storage`).
 API types use `metav1.TypeMeta` / `ObjectMeta`, and the registry owns the

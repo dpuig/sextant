@@ -161,7 +161,7 @@ func (s *fullStack) connected() bool {
 	return st["connected"] == true
 }
 
-// The Phase 0 flow, in process: create a Cluster, mint a token, enroll an
+// The Foundations (F0) flow, in process: create a Cluster, mint a token, enroll an
 // agent with it, see the Cluster go connected, reach the cluster's
 // kube-apiserver through the proxy route, and watch it go disconnected.
 func TestFullStack_ClusterLifecycle(t *testing.T) {

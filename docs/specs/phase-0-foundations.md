@@ -1,7 +1,8 @@
 # Spec: Sextant Phase 0 — Foundations
 
-Source: `Implementation Plan Multi-Cluster Control Plane.md` (Phase 0).
-Status: **Approved.** Moving to Phase 2 (Plan).
+Source: [implementation plan](../../Implementation%20Plan%20Multi-Cluster%20Control%20Plane.md) (milestone F0, "Foundations", originally Phase 0).
+Status: **Built; gates measured below.** Remaining items are re-sequenced by the plan's revision of 2026-10-03: the
+product now leads with a VS Code extension ([spec](vscode-extension.md)), so hardening not needed for E1 is deferred.
 
 ## Objective
 
@@ -126,7 +127,7 @@ resource without isolation coverage fails CI.
   registration tokens; open inbound ports on the agent side; delete or skip a failing isolation test without approval;
   hand-edit generated code.
 
-## Risk tiers (per user working agreement)
+## Risk tiers
 
 | Area | Tier |
 |---|---|
@@ -181,19 +182,22 @@ Exit gate from the plan, made testable:
 4. Tenancy enforcement layering: app-level + RLS (proposed). 5. Cert TTL and rotation policy (proposed 24h / 50%).
 6. API group name and versioning policy.
 
-## Outline of later phases (not specified here — each gets its own spec at the previous gate)
+## What comes after Foundations
 
-| Phase | One-line goal | Gate (abridged) |
-|---|---|---|
-| 1 Import & inventory | Import every cluster <1h; searchable graph | 6 distros in e2e; 100 clusters / 50k pods <10 s lag; 3 design partners |
-| 2 Identity broker & `kx` | SSO to kubectl with no secrets on disk | <2 min onboarding; revoke <60 s; full compat suite; clean pen test |
-| 3 Catalog, migration, guardrails | Replace kubeconfig sprawl; safer multi-cluster ops | 100% migration at a partner; JIT <1 min; break-glass with MP down; first paying customers (**revenue gate**) |
-| 4 Read-only operational assistant | Answer estate questions, never mutate | ≥80% eval; zero secrets in model inputs; used in a real incident |
-| 5 Decision fabric | Bounded, assisted decisions with earned autonomy | 95% shadow agreement; 30 days auto-apply, no harm; replay compares engines |
-| 6 Lifecycle & GitOps | Create/upgrade/retire clusters | Provision+upgrade+delete per provider; 20+ cluster fleet upgrade |
-| 7 Containers & microVMs | One `Workload`, many substrates | Same spec as pod/Kata/microVM; <1 s cold start; real partner workload |
+The remaining milestones are defined in the [implementation plan](../../Implementation%20Plan%20Multi-Cluster%20Control%20Plane.md)
+and [the extension spec](vscode-extension.md); each gets its own spec at the previous milestone's gate. The original
+Phase 1-7 numbering maps onto them like this:
 
-Per the plan: hold Phases 4–7 until the Phase 3 revenue gate passes.
+| Original phase | Now |
+|---|---|
+| 1 Import and inventory graph | E3 (server inventory); local discovery moves to E1 |
+| 2 Identity broker, brokered access, `kx` | E2 |
+| 3 Catalog, migration, guardrails (JIT, break-glass, access reviews) | Split: catalog and credential audit to E1, migration to E2, JIT/break-glass/reviews to E3, guardrails and fan-out to E4 |
+| 4 Read-only assistant, model gateway, MCP | E5 |
+| 5 Decision fabric | E6 |
+| 6 Lifecycle and GitOps; 7 Containers and microVMs | Frozen until E3 has users |
+
+Per the plan: hold assisted decisions, lifecycle and microVMs until the E3 revenue gate passes.
 
 ## Resolved Decisions (owner review, 2026-10-02)
 
@@ -201,11 +205,11 @@ Per the plan: hold Phases 4–7 until the Phase 3 revenue gate passes.
 |---|---|
 | CI provider | GitHub Actions |
 | Names | Go module `github.com/dpuig/sextant` and registry `ghcr.io/dpuig/sextant/*`, both taken from git remote `origin` (`git@github.com:dpuig/sextant.git`). The directory is already a git repo. |
-| Licence | Proprietary for now. `third_party/remotedialer` stays Apache-2.0 with its LICENSE/NOTICE kept. Add a `LICENSE` file stating proprietary terms in Task 1. |
+| Licence | **Apache-2.0** (decided 2026-10-03; it was "proprietary for now"). Everything in the repo is open; `third_party/remotedialer` keeps its upstream Apache-2.0 notices (see `NOTICE`). |
 | Agent cert TTL | 24h, rotate at 50% of lifetime |
 | Postgres for self-hosted chart | BYO Postgres is the supported production path (DSN via Secret). An optional CloudNativePG subchart is provided for eval/dev, off by default. |
 | Phase 0 scale target | 500 concurrent agents per apiserver replica, used by the load/chaos tests |
-| Team | Solo plus agents. Tasks are sequenced serially, and low-tier tasks (Makefile, CI scaffold, docs, UI scaffold) can be delegated per the escalation ladder. High-tier tasks are done inline. |
+| Team | Solo plus agents. Tasks are sequenced serially, and low-tier tasks (Makefile, CI scaffold, docs, UI scaffold) can be delegated. High-tier tasks are done inline. |
 
 ## Open Questions
 

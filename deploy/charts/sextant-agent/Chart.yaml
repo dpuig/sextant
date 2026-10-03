@@ -4,3 +4,8 @@ description: "Sextant agent: one outbound mTLS tunnel from this cluster to the m
 type: application
 version: 0.1.0
 appVersion: "0.1.0"
+home: https://github.com/dpuig/sextant
+sources:
+  - https://github.com/dpuig/sextant
+annotations:
+  artifacthub.io/license: Apache-2.0

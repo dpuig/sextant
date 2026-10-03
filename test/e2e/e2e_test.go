@@ -1,6 +1,6 @@
 //go:build e2e
 
-// Package e2e runs the Phase 0 exit gates against two real kind clusters: one
+// Package e2e runs the Foundations (F0) exit gates against two real kind clusters: one
 // hosting the management plane (with Postgres), one a workload cluster running
 // the agent. It needs kind, helm, kubectl and a container runtime (podman, or docker via
 // SEXTANT_E2E_CONTAINER), and the images from

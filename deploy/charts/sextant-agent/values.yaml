@@ -20,7 +20,7 @@ registration:
 
 rbac:
   # What the agent's service account may do in THIS cluster, and therefore what
-  # the management plane can do through it. Phase 0 has no per-user
+  # the management plane can do through it. Until the identity broker (E2) there is no per-user
   # impersonation, so this is the ceiling for everyone using the proxy.
   accessClusterRole: view
 

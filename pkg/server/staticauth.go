@@ -11,7 +11,7 @@ import (
 
 // StaticAuth authenticates one bearer token and authorizes its holder for
 // every verb on one tenant. It exists for local development and e2e tests
-// until the identity broker lands (Phase 2); it must never serve production.
+// until the identity broker lands (E2); it must never serve production.
 type StaticAuth struct {
 	token  string
 	tenant tenancy.ID

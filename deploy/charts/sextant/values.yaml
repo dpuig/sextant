@@ -39,7 +39,7 @@ migrate:
   enabled: true      # run `apiserver migrate` as a pre-install/pre-upgrade hook
 
 # DEV ONLY. A static bearer token granting full access to one tenant, until the
-# identity broker (Phase 2) exists. Exposed beyond loopback only because the
+# identity broker (E2) exists. Exposed beyond loopback only because the
 # pod must listen on all interfaces; TLS is mandatory.
 dev:
   enabled: false

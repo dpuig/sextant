@@ -5,9 +5,9 @@
 **One control plane for every Kubernetes cluster you run: brokered, short-lived, audited access first; fleet insight and lifecycle management built on top.**
 
 [![CI](https://github.com/dpuig/sextant/actions/workflows/ci.yml/badge.svg)](https://github.com/dpuig/sextant/actions/workflows/ci.yml)
-![Status](https://img.shields.io/badge/status-Phase%200%20(foundations)-orange)
+![Status](https://img.shields.io/badge/status-backend%20foundations-orange)
 ![Go](https://img.shields.io/badge/go-1.26-00ADD8)
-![License](https://img.shields.io/badge/license-proprietary-lightgrey)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
 </div>
 
@@ -18,10 +18,10 @@ outbound-only agent in each cluster and one management plane in front of them,
 so engineers sign in once and reach any cluster they are entitled to without a
 secret on their laptop.
 
-> **Status: Phase 0 (foundations), in progress.** The management plane, agent
-> tunnel, enrollment, Helm charts and an end-to-end test on real clusters work.
-> Identity (SSO), the inventory graph, the `kx` CLI and the assistant and automation
-> features are later phases. See [Roadmap](#roadmap) and [What is not built yet](#what-is-not-built-yet).
+> **Open source (Apache-2.0).** Status: backend foundations built; VS Code extension is next.** The management plane, agent
+> tunnel, enrollment, Helm charts and an end-to-end test on real clusters work. The extension, SSO,
+> and the assistant and automation features are not built yet. See [Roadmap](#roadmap) and
+> [What is not built yet](#what-is-not-built-yet).
 
 ## How it works
 
@@ -97,7 +97,7 @@ curl -H "Authorization: Bearer $SEXTANT_DEV_TOKEN" $B/clusters
 ```
 
 > The dev token grants full access to one tenant. It exists until the identity
-> broker lands (Phase 2) and is refused on non-loopback addresses unless TLS **and**
+> broker lands (E2) and is refused on non-loopback addresses unless TLS **and**
 > `--dev-insecure-allow-remote` are set.
 
 ### End-to-end on real clusters
@@ -166,22 +166,24 @@ docs/                specs, ADRs, testing notes
 
 ## Roadmap
 
-Each phase ends at an exit gate, not a date. The full plan is in
-[implementation plan](Implementation%20Plan%20Multi-Cluster%20Control%20Plane.md);
-the Phase 0 spec and gate status are in [docs/specs/phase-0-foundations.md](docs/specs/phase-0-foundations.md).
+The product is delivered first as a **VS Code extension**, where the target engineers already work. It is
+local-first: useful immediately against existing kubeconfigs with no server, and upgraded by connecting to a
+Sextant management plane for brokered, short-lived, audited access. Each milestone ends at an exit gate, not a
+date. Details: [docs/specs/vscode-extension.md](docs/specs/vscode-extension.md); the original plan, with a
+rewritten around the extension, is the [implementation plan](Implementation%20Plan%20Multi-Cluster%20Control%20Plane.md).
 
-| Phase | Goal | State |
+| Milestone | Goal | State |
 |---|---|---|
-| 0 | Foundations: management plane, agent tunnel, API model | **In progress** |
-| 1 | Cluster import and inventory graph | Planned |
-| 2 | SSO identity broker, brokered access, `kx` CLI | Planned |
-| 3 | Kubeconfig migration, guardrails, JIT elevation | Planned (revenue gate) |
-| 4 | Read-only operational assistant: grounded answers about your estate, pluggable model gateway, MCP server | Planned |
-| 5 | Assisted decisions with earned autonomy (shadow mode first, policy always in the loop) | Planned |
-| 6 | Cluster lifecycle and GitOps | Planned |
-| 7 | Containers and microVMs | Planned |
+| F0 Foundations | Management plane, agent tunnel, enrollment, API model (this repository) | **Built; remaining hardening deferred** |
+| E1 | Local-first extension: fleet tree, environment tagging, context safety, bound terminals, credential audit | **Next** (spec in review) |
+| E2 | Connect: SSO sign-in, brokered short-lived access, no secrets on disk | Planned |
+| E3 | Fleet from the server, just-in-time elevation, audit links | Planned |
+| E4 | Guardrails for destructive operations, session view | Planned |
+| E5 | Operational assistant through the platform's MCP server (read-only) | Planned |
+| E6 | Assisted decisions with earned autonomy, shadow mode first | Planned |
+| Later | Cluster lifecycle and GitOps, containers and microVMs | Frozen until E3 has users |
 
-### Phase 0 exit gates
+### Foundations exit gates (F0)
 
 | Gate | Status |
 |---|---|
@@ -198,7 +200,8 @@ the Phase 0 spec and gate status are in [docs/specs/phase-0-foundations.md](docs
 
 Stated plainly so nothing here is mistaken for more than it is:
 
-- **No production authentication.** SSO, SCIM and per-user access policy are Phase 2.
+- **No VS Code extension yet.** It is the next milestone (E1) and the primary product surface.
+- **No production authentication.** SSO, SCIM and per-user access policy arrive with E2.
   Until then the proxy acts with the agent's own service account (a ceiling set by
   `rbac.accessClusterRole`), the same for every caller.
 - **No Vault or cloud-KMS signer.** The root CA is a local file (dev and CI only).
@@ -206,7 +209,15 @@ Stated plainly so nothing here is mistaken for more than it is:
 - **No watch or event stream** (NATS), no inventory, no UI.
 - **CI end-to-end job is untested** on a GitHub runner.
 
+## Contributing
+
+Contributions are welcome under the [Apache-2.0](LICENSE) licence with a DCO sign-off (`git commit -s`). Read
+[CONTRIBUTING.md](CONTRIBUTING.md) first; report vulnerabilities privately as described in [SECURITY.md](SECURITY.md);
+participation is governed by the [Code of Conduct](CODE_OF_CONDUCT.md).
+
 ## License
 
-Proprietary. All rights reserved; see [LICENSE](LICENSE). Vendored components under
-`third_party/` remain under their own licenses.
+Copyright 2026 Daniel Puig and the Sextant contributors. Licensed under the
+[Apache License, Version 2.0](LICENSE); see [NOTICE](NOTICE). The vendored [remotedialer](third_party/remotedialer/UPSTREAM.md)
+fork keeps its upstream Apache-2.0 licence, and every other dependency is permissively licensed
+([list](docs/third-party-licenses.md)).
