@@ -207,7 +207,6 @@ Stated plainly so nothing here is mistaken for more than it is:
 - **No Vault or cloud-KMS signer.** The root CA is a local file (dev and CI only).
 - **No revocation store.** Revocation is a hook plus `Server.Disconnect`.
 - **No watch or event stream** (NATS), no inventory, no UI.
-- **CI end-to-end job is untested** on a GitHub runner.
 
 ## Contributing
 

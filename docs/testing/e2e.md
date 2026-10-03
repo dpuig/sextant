@@ -26,8 +26,8 @@ events and logs from both clusters before deleting them.
 - **No real NAT.** Both clusters share a container network. The agent is
   outbound-only by construction (no ports, no Service, asserted above), but a NAT
   traversal has not been exercised.
-- **Not run in CI yet.** The `e2e` job in `.github/workflows/ci.yml` is untested
-  (it uses docker + kind on a GitHub runner); expect a first-run fix or two.
+- **CI runs it on docker, not podman.** The `e2e` job in `.github/workflows/ci.yml` passed on a GitHub runner
+  (2026-10-03), so the suite is not podman-specific; the numbers above are from a local podman run.
 - The database role `sextant_app` is created out of band (as it would be in a real
   deployment), and the dev bearer token stands in for the identity broker (E2).
 

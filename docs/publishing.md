@@ -1,10 +1,9 @@
 # Publishing the repository
 
-The code is licensed Apache-2.0 (decided 2026-10-03), but the GitHub repository is **private** and stays so until
-this checklist is done. Publishing is effectively irreversible: once public, anyone can clone and keep the full
-history, so everything below happens first. Items marked **owner** need you, not an agent.
+**Status: public since 2026-10-03.** The code is licensed Apache-2.0 and the repository was made public by the owner
+after the checks below. This file records what was verified, and what is still open now that the history is public.
 
-## Done
+## Done before publishing
 
 - [x] **Licence in place:** `LICENSE` (Apache-2.0), `NOTICE`, licence labels on images and charts.
 - [x] **Community files:** `CONTRIBUTING.md` (DCO), `SECURITY.md` (private reporting), `CODE_OF_CONDUCT.md`,
@@ -18,28 +17,24 @@ history, so everything below happens first. Items marked **owner** need you, not
       copyleft or unrecognised licence.
 - [x] **Internal references removed** from the docs (private working-agreement wording).
 
-## To do before flipping to public
+## Done after publishing (2026-10-03)
 
-- [ ] **Author identity (owner).** All commits carry a personal Gmail address as author and committer, and it becomes
-      public with the history. Options: accept it; or, **before the repository is public and while only you have
-      clones**, rewrite history to the GitHub `noreply` address (`git filter-repo --mailmap`), then force-push. Rewriting
-      later is far costlier. Set `git config user.email` to the noreply address going forward either way.
-- [ ] **Name and trademark check (owner).** Confirm "Sextant" is usable for this product (search the Kubernetes tooling
-      space and the trademark registers) and that you control the `andean.io` domain used in the API group
-      `sextant.andean.io`. Decide whether to add a `TRADEMARK.md` so forks cannot ship under the name.
-- [ ] **CI has never run on a GitHub runner.** Push to a branch, get `go`, `dco` and `e2e` green (expect a fix or two
-      in `e2e`), so the first public impression is a passing build.
-- [ ] **GitHub settings (owner):** enable private vulnerability reporting, secret scanning with push protection and
-      Dependabot; require the CI checks, the DCO check and code-owner review on `main`; add a description and topics;
-      confirm Actions is allowed for forks' pull requests with read-only tokens.
-- [ ] **Conduct contact.** `CODE_OF_CONDUCT.md` currently routes reports through GitHub's private reporting; publish a
-      dedicated address when you have one.
-- [ ] **Read the whole tree once as a stranger would:** README accuracy, the plan's commercial wording, and anything you
-      would not want attributed to the project.
-- [ ] **Decide the hosted-offering story** (see the plan's "Open source and the business model") enough that the README
-      does not over- or under-promise.
+- [x] **Repository settings:** secret scanning with push protection, Dependabot alerts and security updates, and
+      private vulnerability reporting (which `SECURITY.md` points reporters to) are enabled; description and topics set.
+- [x] **CI on a GitHub runner:** the `go` and `e2e` jobs pass (the e2e job runs the kind suite with docker).
 
-## Flipping it
+## Still open
 
-Only after the list above: *Settings → General → Danger Zone → Change visibility → Public*, then tag a pre-release
-and announce deliberately.
+- [ ] **Branch protection (owner).** `main` is unprotected. Require the CI checks, the DCO check and code-owner review
+      (`CODEOWNERS` is in place), and disallow force-pushes.
+- [ ] **Author identity.** The Gmail address on every commit is public and cannot be recalled by rewriting history
+      (forks and scrapers may already have it). Use the GitHub `noreply` address from now on
+      (`git config user.email`); treat the old one as exposed.
+- [ ] **Name and trademark (owner).** Confirm "Sextant" is usable for this product and that you control `andean.io`
+      (API group `sextant.andean.io`). Decide whether to add a `TRADEMARK.md`.
+- [ ] **DCO check is untested:** it only runs on pull requests, so the first external or test PR will show whether it works.
+- [ ] **Second-opinion secret scan.** Run gitleaks or trufflehog over the full history once; the in-repo scan used
+      pattern matching only.
+- [ ] **Conduct contact.** Publish a dedicated address in `CODE_OF_CONDUCT.md` when you have one.
+- [ ] **Hosted-offering story.** Settle it enough that the README does not over- or under-promise (see the plan's
+      "Open source and the business model").
