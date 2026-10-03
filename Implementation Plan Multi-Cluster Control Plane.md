@@ -1,4 +1,4 @@
-# Implementation Plan: AI-Native Multi-Cluster Control Plane
+# Implementation Plan: Multi-Cluster Control Plane
 
 Oct 2, 2026 · @Daniel Puig
 

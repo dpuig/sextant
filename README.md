@@ -2,7 +2,7 @@
 
 # Sextant
 
-**One control plane for every Kubernetes cluster you run: brokered, short-lived, audited access first; AI and lifecycle on top.**
+**One control plane for every Kubernetes cluster you run: brokered, short-lived, audited access first; fleet insight and lifecycle management built on top.**
 
 [![CI](https://github.com/dpuig/sextant/actions/workflows/ci.yml/badge.svg)](https://github.com/dpuig/sextant/actions/workflows/ci.yml)
 ![Status](https://img.shields.io/badge/status-Phase%200%20(foundations)-orange)
@@ -20,8 +20,8 @@ secret on their laptop.
 
 > **Status: Phase 0 (foundations), in progress.** The management plane, agent
 > tunnel, enrollment, Helm charts and an end-to-end test on real clusters work.
-> Identity (SSO), the inventory graph, the `kx` CLI and everything AI-related are
-> later phases. See [Roadmap](#roadmap) and [What is not built yet](#what-is-not-built-yet).
+> Identity (SSO), the inventory graph, the `kx` CLI and the assistant and automation
+> features are later phases. See [Roadmap](#roadmap) and [What is not built yet](#what-is-not-built-yet).
 
 ## How it works
 
@@ -167,7 +167,7 @@ docs/                specs, ADRs, testing notes
 ## Roadmap
 
 Each phase ends at an exit gate, not a date. The full plan is in
-[Implementation Plan AI-Native Multi-Cluster Control Plane.md](Implementation%20Plan%20AI-Native%20Multi-Cluster%20Control%20Plane.md);
+[implementation plan](Implementation%20Plan%20Multi-Cluster%20Control%20Plane.md);
 the Phase 0 spec and gate status are in [docs/specs/phase-0-foundations.md](docs/specs/phase-0-foundations.md).
 
 | Phase | Goal | State |
@@ -176,8 +176,8 @@ the Phase 0 spec and gate status are in [docs/specs/phase-0-foundations.md](docs
 | 1 | Cluster import and inventory graph | Planned |
 | 2 | SSO identity broker, brokered access, `kx` CLI | Planned |
 | 3 | Kubeconfig migration, guardrails, JIT elevation | Planned (revenue gate) |
-| 4 | Read-only AI copilot, model gateway, MCP server | Planned |
-| 5 | AI decision fabric | Planned |
+| 4 | Read-only operational assistant: grounded answers about your estate, pluggable model gateway, MCP server | Planned |
+| 5 | Assisted decisions with earned autonomy (shadow mode first, policy always in the loop) | Planned |
 | 6 | Cluster lifecycle and GitOps | Planned |
 | 7 | Containers and microVMs | Planned |
 

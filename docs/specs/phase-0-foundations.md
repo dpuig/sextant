@@ -1,6 +1,6 @@
 # Spec: Sextant Phase 0 — Foundations
 
-Source: `Implementation Plan AI-Native Multi-Cluster Control Plane.md` (Phase 0).
+Source: `Implementation Plan Multi-Cluster Control Plane.md` (Phase 0).
 Status: **Approved.** Moving to Phase 2 (Plan).
 
 ## Objective
@@ -188,8 +188,8 @@ Exit gate from the plan, made testable:
 | 1 Import & inventory | Import every cluster <1h; searchable graph | 6 distros in e2e; 100 clusters / 50k pods <10 s lag; 3 design partners |
 | 2 Identity broker & `kx` | SSO to kubectl with no secrets on disk | <2 min onboarding; revoke <60 s; full compat suite; clean pen test |
 | 3 Catalog, migration, guardrails | Replace kubeconfig sprawl; safer multi-cluster ops | 100% migration at a partner; JIT <1 min; break-glass with MP down; first paying customers (**revenue gate**) |
-| 4 Read-only AI copilot | Answer estate questions, never mutate | ≥80% eval; zero secrets in model inputs; used in a real incident |
-| 5 Decision fabric | Bounded AI decisions with earned autonomy | 95% shadow agreement; 30 days auto-apply, no harm; replay compares engines |
+| 4 Read-only operational assistant | Answer estate questions, never mutate | ≥80% eval; zero secrets in model inputs; used in a real incident |
+| 5 Decision fabric | Bounded, assisted decisions with earned autonomy | 95% shadow agreement; 30 days auto-apply, no harm; replay compares engines |
 | 6 Lifecycle & GitOps | Create/upgrade/retire clusters | Provision+upgrade+delete per provider; 20+ cluster fleet upgrade |
 | 7 Containers & microVMs | One `Workload`, many substrates | Same spec as pod/Kata/microVM; <1 s cold start; real partner workload |
 
