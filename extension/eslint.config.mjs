@@ -6,7 +6,15 @@ const typed = tseslint.configs.strictTypeChecked.map((c) => ({ ...c, files: ['**
 
 export default tseslint.config(
   {
-    ignores: ['dist/**', 'dist-test/**', 'dist-vsix/**', 'node_modules/**', 'coverage/**', '.vscode-test/**'],
+    ignores: [
+      'dist/**',
+      'dist-test/**',
+      'dist-vsix/**',
+      'node_modules/**',
+      'coverage/**',
+      '.vscode-test/**',
+      'ui-ux/**',
+    ],
   },
   js.configs.recommended,
   ...typed,
