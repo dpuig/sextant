@@ -1,0 +1,42 @@
+{
+ "v": 3,
+ "layout": "files",
+ "createdOnFiles": {
+  "v": 1,
+  "at": "2026-10-04T04:16:44Z"
+ },
+ "title": "Sextant",
+ "namespace": "Sextant",
+ "libraries": [],
+ "sections": {},
+ "groups": [
+  "Icons"
+ ],
+ "assetGroups": {
+  "Icons": {
+   "name": "Icons",
+   "tile": "s",
+   "order": [
+    "sextant-activity.svg"
+   ],
+   "files": {
+    "sextant-activity.svg": {
+     "name": "sextant-activity.svg",
+     "blob": "e660fb68caaab23f4483843a5a21bed7",
+     "size": 388,
+     "type": "image/svg+xml"
+    }
+   }
+  }
+ },
+ "blobs": {},
+ "docs": {
+  "sections": []
+ },
+ "lastChange": {
+  "by": "dpuig",
+  "at": "2026-10-04T04:16:44Z",
+  "via": "Claude (Cowork)",
+  "note": "E1 UI design system from the Sextant brief: tokens for Dark+/Light+/HC, 16 surface specs, copy deck, accessibility, native gaps."
+ }
+}
