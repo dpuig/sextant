@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Config
+contexts:
+  - name: brokered
+    context: {cluster: c, user: kx}
+clusters:
+  - name: c
+    cluster: {server: "https://sextant.example.com/apis/sextant.andean.io/v1alpha1/organizations/acme/clusters/prod/proxy"}
+users:
+  - name: kx
+    user:
+      exec: {apiVersion: client.authentication.k8s.io/v1, command: kx, args: [token, --cluster, prod]}

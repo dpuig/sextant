@@ -118,8 +118,9 @@ for staging.
 - [ ] Fleet tree grouped by environment then provider, with search and the current context marked.
 - [ ] Environment and criticality tagging by QuickPick or by rule (glob on context name); stored in settings,
       never in the kubeconfig.
-- [ ] Context safety: status bar with unmistakable colour for critical environments; confirmation when switching to
-      one; warning when opening a terminal or file against one.
+- [ ] Context safety: status bar with unmistakable colour for critical environments; confirmation when opening a
+      terminal on one, and a warning if the global current context is switched to one outside the extension (the
+      extension never changes the global context in E1).
 - [ ] Bound terminals: a minimal generated kubeconfig for exactly one context, so a later global context change
       cannot redirect the session.
 - [ ] Credential audit (local analogue of `kx scan`): auth method, certificate expiry, long-lived or not. No secret
@@ -199,7 +200,8 @@ instead of standing admin.
 **Deliverables**
 
 - [ ] Import flows: a generated `helm install` per cluster; cloud-account discovery for EKS, AKS and GKE (read-only
-      role that lists clusters and offers one-click import).
+      role that lists clusters and offers one-click import). After the first customers: read-only discovery from an
+      existing fleet hub (KubeFleet `MemberCluster`, see [ADR 0004](docs/adr/0004-kubefleet.md)).
 - [ ] Agent collectors: informer-based watchers for nodes, namespaces, workloads, services, ingresses, RBAC bindings
       and CRDs, streaming deltas with backpressure and metadata-only informers where full objects are not needed.
 - [ ] Inventory graph in Postgres (provider, account, region, cluster, namespace, workload, image; RBAC subjects,
@@ -310,7 +312,8 @@ accuracy.
 Crossplane for surrounding cloud resources composed into `ClusterTemplate`; self-service from approved templates
 with access policy attached automatically; fleet upgrades in waves with pre-flight checks and automatic pause on
 health regression; an upgrade-risk decision policy; Argo CD or Flux management (no new GitOps engine); versioned
-add-on bundles. Gate: provision, upgrade two minor versions and delete a cluster on each supported provider; a fleet
+add-on bundles. Resource distribution across the fleet is a candidate for [KubeFleet](https://kubefleet.dev/), to be
+evaluated by a spike when this track unfreezes ([ADR 0004](docs/adr/0004-kubefleet.md): not a dependency before then). Gate: provision, upgrade two minor versions and delete a cluster on each supported provider; a fleet
 upgrade across 20 or more clusters with pause and resume.
 
 **Containers and microVMs.** One `Workload` abstraction as a pod, a sandboxed pod (Kata on a `RuntimeClass`), a
@@ -377,5 +380,5 @@ and run in parallel.
 | [docs/publishing.md](docs/publishing.md) | Pre-publication checklist for making the repository public |
 | [docs/specs/vscode-extension.md](docs/specs/vscode-extension.md) | E1 specification; E2-E6 outline |
 | [docs/specs/phase-0-foundations.md](docs/specs/phase-0-foundations.md) | F0 specification and gate status |
-| [docs/adr/](docs/adr/) | Architecture decisions (API server shape, tunnel) |
+| [docs/adr/](docs/adr/) | Architecture decisions (API server shape, tunnel, bound terminals, KubeFleet) |
 | [docs/testing/e2e.md](docs/testing/e2e.md) | What `make e2e` proves and does not |

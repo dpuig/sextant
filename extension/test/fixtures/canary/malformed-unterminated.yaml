@@ -1,0 +1,3 @@
+users:
+  - name: a
+    user: {token: CANARY-static-token-3f9a1c7e5b2d, client-key-data: CANARY-client-key-data-8d4e6a0f1c93

@@ -1,0 +1,51 @@
+apiVersion: v1
+kind: Config
+current-context: all-secrets
+contexts:
+  - name: all-secrets
+    context: { cluster: c-all, user: u-all, namespace: web }
+  - name: oidc
+    context: { cluster: c-all, user: u-oidc }
+  - name: basic
+    context: { cluster: c-all, user: u-basic }
+  - name: exec
+    context: { cluster: c-all, user: u-exec }
+  - name: impersonate
+    context: { cluster: c-all, user: u-imp }
+clusters:
+  - name: c-all
+    cluster:
+      server: 'https://admin:CANARY-userinfo-password-3c5e7a9b1d84@api.example.com:6443/prefix'
+      certificate-authority-data: CANARY-ca-data-1e3c5a7b9d02
+      proxy-url: 'http://proxy-user:CANARY-userinfo-password-3c5e7a9b1d84@proxy.example.com:3128'
+users:
+  - name: u-all
+    user:
+      token: CANARY-static-token-3f9a1c7e5b2d
+      client-certificate-data: CANARY-client-cert-data-5b7a2e9d4c18
+      client-key-data: CANARY-client-key-data-8d4e6a0f1c93
+  - name: u-oidc
+    user:
+      auth-provider:
+        name: oidc
+        config:
+          idp-issuer-url: https://issuer.example.com
+          client-id: kube
+          client-secret: CANARY-oidc-client-secret-0a2c4e6b8d13
+          id-token: CANARY-oidc-id-token-7c9e1a3b5d28
+          refresh-token: CANARY-oidc-refresh-token-4e6a8c0b2d59
+  - name: u-basic
+    user: { username: admin, password: CANARY-basic-password-6f8a0b2c4d71 }
+  - name: u-exec
+    user:
+      exec:
+        apiVersion: client.authentication.k8s.io/v1
+        command: some-plugin
+        args: ['--token', 'CANARY-exec-arg-secret-9b1d3f5a7c46']
+        env:
+          - { name: API_SECRET, value: CANARY-exec-env-secret-2a4c6e8f0b35 }
+  - name: u-imp
+    user:
+      token: CANARY-impersonate-token-8a0c2e4b6d97
+      as: someone
+      as-groups: [system:masters]

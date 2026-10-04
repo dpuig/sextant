@@ -1,6 +1,6 @@
 # Spec: Sextant for VS Code
 
-Status: **DRAFT for review.** No extension code until approved.
+Status: **DRAFT for review.** No extension code until approved. Implementation plan and tasks: [vscode-extension-plan.md](vscode-extension-plan.md).
 Decided 2026-10-03: local-first then connect; VS Code Marketplace + Open VSX; v1 user is the
 engineer who works across many clusters. Defines milestone E1 of the
 [implementation plan](../../Implementation%20Plan%20Multi-Cluster%20Control%20Plane.md). The management-plane work
@@ -107,8 +107,10 @@ is unit-testable at speed and reusable (CLI, future web UI).
 3. **Environment tagging.** Tag a context `dev | staging | prod | custom` and `criticality`,
    via QuickPick or by rule (glob on context name, e.g. `*-prod-*` -> prod). Stored in settings.
 4. **Context safety.** Status bar shows the active context; critical environments render in an
-   unmistakable colour with a warning icon. Switching *to* a critical context asks for confirmation
-   (configurable). Warn when a file or terminal is opened against a critical context.
+   unmistakable colour with a warning icon. The extension never changes the global `current-context` in E1
+   (it is read-only on the kubeconfig), so safety works two ways: opening a **bound terminal** on a critical
+   context asks for confirmation (configurable), and if the global `current-context` is changed *outside* the
+   extension (for example `kubectl config use-context`) a notification warns when the new context is critical.
 5. **Bound terminals.** "Open terminal for this cluster" starts a terminal with `KUBECONFIG`
    pointing at a generated, minimal kubeconfig for just that context, a coloured tab and prompt
    hint. This isolates the session from later global context changes (the classic wrong-cluster bug).
@@ -156,7 +158,7 @@ Coverage target: >= 90% on `kubeconfig/` and `model/`; the glue in `views/` is c
 ## Boundaries
 
 - **Always:** keep kubeconfig parsing pure and tested against real fixtures; treat every kubeconfig
-  as containing secrets; show classification, never values; confirm before switching to a critical
+  as containing secrets; show classification, never values; confirm before opening a terminal on a critical
   context; run the canary test in CI; lazy-activate.
 - **Ask first:** adding a runtime dependency; enabling any telemetry or network call at all in E1;
   changing `contributes` (views/commands/config) after first publish; publishing a release.
@@ -171,7 +173,7 @@ Coverage target: >= 90% on `kubeconfig/` and `model/`; the glue in `views/` is c
       kubeconfig in under 60 s, with zero configuration.
 - [ ] **Scale:** 200 contexts render the tree in under 500 ms; the audit of 50 contexts completes in under 2 s.
 - [ ] **Safety:** a context tagged critical is visually unmistakable in status bar, tree and terminal;
-      switching to it requires confirmation; a bound terminal's `kubectl config current-context`
+      opening a terminal on it requires confirmation, and an external switch to it raises a warning; a bound terminal's `kubectl config current-context`
       cannot change when the global context changes (e2e on kind).
 - [ ] **Secrets:** the canary test passes: no fixture secret appears in any output surface.
 - [ ] **Performance:** activation under 200 ms; bundle under 2 MB (E1, no binaries).

@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Config
+current-context: default/api-ocp-example-com:6443/kubeadmin
+contexts:
+  - name: default/api-ocp-example-com:6443/kubeadmin
+    context: {cluster: api-ocp-example-com:6443, namespace: default, user: kubeadmin/api-ocp-example-com:6443}
+clusters:
+  - name: api-ocp-example-com:6443
+    cluster: {server: "https://api.ocp.example.com:6443"}
+users:
+  - name: kubeadmin/api-ocp-example-com:6443
+    user: {token: sha256~notarealtoken}

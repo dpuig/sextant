@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Config
+contexts:
+  - name: aks-old
+    context: {cluster: aks-old, user: azure-user}
+clusters:
+  - name: aks-old
+    cluster: {server: "https://aks-old.hcp.northeurope.azmk8s.io:443"}
+users:
+  - name: azure-user
+    user:
+      auth-provider:
+        name: azure
+        config: {access-token: Zm9v, refresh-token: YmFy, tenant-id: t}

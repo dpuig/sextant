@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Config
+current-context: arn:aws:eks:eu-west-1:123456789012:cluster/prod-eu
+contexts:
+  - name: arn:aws:eks:eu-west-1:123456789012:cluster/prod-eu
+    context: {cluster: arn:aws:eks:eu-west-1:123456789012:cluster/prod-eu, user: arn:aws:eks:eu-west-1:123456789012:cluster/prod-eu}
+clusters:
+  - name: arn:aws:eks:eu-west-1:123456789012:cluster/prod-eu
+    cluster: {server: "https://ABCDEF0123456789.gr7.eu-west-1.eks.amazonaws.com", certificate-authority-data: Zm9v}
+users:
+  - name: arn:aws:eks:eu-west-1:123456789012:cluster/prod-eu
+    user:
+      exec:
+        apiVersion: client.authentication.k8s.io/v1beta1
+        command: aws
+        args: [--region, eu-west-1, eks, get-token, --cluster-name, prod-eu, --output, json]

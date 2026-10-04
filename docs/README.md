@@ -6,9 +6,12 @@ Start with the [implementation plan](../Implementation%20Plan%20Multi-Cluster%20
 | Document | What it is |
 |---|---|
 | [specs/vscode-extension.md](specs/vscode-extension.md) | Specification of milestone E1 (the VS Code extension, local-first); E2-E6 outlined |
+| [specs/vscode-extension-plan.md](specs/vscode-extension-plan.md) | E1 implementation plan: dependency graph, 15 vertical tasks with acceptance criteria, checkpoints, risks |
 | [specs/phase-0-foundations.md](specs/phase-0-foundations.md) | Specification of F0 (management plane, agent, tunnel) and the measured status of its gates |
 | [adr/0001-api-server-shape.md](adr/0001-api-server-shape.md) | Why the API server is a small HTTP server over Postgres for now |
 | [adr/0002-tunnel-approach.md](adr/0002-tunnel-approach.md) | Tunnel choice, measurements and the patches to the vendored library |
+| [adr/0003-bound-terminals.md](adr/0003-bound-terminals.md) | How terminals stay bound to one cluster, the spike's findings and conditions |
+| [adr/0004-kubefleet.md](adr/0004-kubefleet.md) | Why KubeFleet is not a core dependency, and when to revisit |
 | [testing/e2e.md](testing/e2e.md) | What `make e2e` proves on real clusters, and what it does not |
 | [publishing.md](publishing.md) | Pre-publication checklist for making the repository public |
 | [third-party-licenses.md](third-party-licenses.md) | Licences of every dependency in the shipped binaries (generated: `make licenses`) |

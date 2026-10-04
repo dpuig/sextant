@@ -1,0 +1,149 @@
+{
+  "name": "sextant-vscode",
+  "displayName": "Sextant",
+  "description": "See every Kubernetes cluster you run, tell production from staging at a glance, and work in terminals that cannot drift to the wrong cluster.",
+  "version": "0.0.1",
+  "publisher": "sextant-placeholder",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dpuig/sextant.git",
+    "directory": "extension"
+  },
+  "homepage": "https://github.com/dpuig/sextant",
+  "bugs": {
+    "url": "https://github.com/dpuig/sextant/issues"
+  },
+  "engines": {
+    "vscode": "^1.90.0",
+    "node": ">=20"
+  },
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "kubernetes",
+    "kubectl",
+    "kubeconfig",
+    "multi-cluster",
+    "context"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "sextant",
+          "title": "Sextant",
+          "icon": "media/sextant.svg"
+        }
+      ]
+    },
+    "views": {
+      "sextant": [
+        {
+          "id": "sextant.fleet",
+          "name": "Fleet"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "sextant.fleet",
+        "contents": "No kubeconfig contexts found.\n\nSextant reads the files in your KUBECONFIG, or ~/.kube/config. You can add more files in settings.\n[Open settings](command:workbench.action.openSettings?%5B%22sextant.kubeconfigPaths%22%5D)",
+        "when": "!sextant.hasContexts"
+      }
+    ],
+    "commands": [
+      {
+        "command": "sextant.showVersion",
+        "title": "Show Version",
+        "category": "Sextant"
+      },
+      {
+        "command": "sextant.fleet.refresh",
+        "title": "Refresh",
+        "category": "Sextant",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "sextant.fleet.filter",
+        "title": "Filter Clusters",
+        "category": "Sextant",
+        "icon": "$(search)"
+      },
+      {
+        "command": "sextant.fleet.clearFilter",
+        "title": "Clear Filter",
+        "category": "Sextant",
+        "icon": "$(clear-all)"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "sextant.fleet.filter",
+          "when": "view == sextant.fleet && !sextant.filtered",
+          "group": "navigation@1"
+        },
+        {
+          "command": "sextant.fleet.clearFilter",
+          "when": "view == sextant.fleet && sextant.filtered",
+          "group": "navigation@1"
+        },
+        {
+          "command": "sextant.fleet.refresh",
+          "when": "view == sextant.fleet",
+          "group": "navigation@2"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Sextant",
+      "properties": {
+        "sextant.kubeconfigPaths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "scope": "machine",
+          "markdownDescription": "Additional kubeconfig files to read, after those in `KUBECONFIG` (or `~/.kube/config`). `~` is expanded. They are read last, so they can never override your real configuration."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "node esbuild.mjs",
+    "build:test": "node esbuild.mjs --test",
+    "watch": "node esbuild.mjs --watch",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint . && prettier --check .",
+    "format": "prettier --write .",
+    "test": "vitest run",
+    "test:integration": "npm run build && npm run build:test && node dist-test/runTest.js",
+    "prepackage": "node scripts/prepackage.mjs",
+    "package": "node esbuild.mjs --production && mkdir -p dist-vsix && vsce package --no-dependencies --out dist-vsix/sextant-vscode.vsix && node scripts/check-size.mjs",
+    "test:coverage": "vitest run --coverage"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.0.0",
+    "@types/node": "^20.0.0",
+    "@types/vscode": "1.90.0",
+    "@vitest/coverage-v8": "^3.2.7",
+    "@vscode/test-electron": "^2.4.0",
+    "@vscode/vsce": "^3.0.0",
+    "esbuild": "^0.25.0",
+    "eslint": "^9.0.0",
+    "prettier": "^3.0.0",
+    "typescript": "^5.6.0",
+    "typescript-eslint": "^8.0.0",
+    "vitest": "^3.0.0"
+  },
+  "dependencies": {
+    "yaml": "^2.9.1"
+  },
+  "activationEvents": [
+    "onView:sextant.fleet"
+  ]
+}

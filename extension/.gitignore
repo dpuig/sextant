@@ -1,0 +1,10 @@
+node_modules/
+dist/
+dist-test/
+dist-vsix/
+coverage/
+*.vsix
+# Copied from the repository root by scripts/prepackage.mjs so the VSIX carries them.
+/LICENSE
+/NOTICE
+.vscode-test/

@@ -1,0 +1,6 @@
+users:
+  - name: a
+    user:
+      token: CANARY-static-token-3f9a1c7e5b2d
+      token: CANARY-impersonate-token-8a0c2e4b6d97
+  - {name: b, user: {password: CANARY-basic-password-6f8a0b2c4d71

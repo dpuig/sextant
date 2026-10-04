@@ -61,3 +61,26 @@ jobs:
         with:
           install_only: true   # the test creates its own two clusters
       - run: make e2e CONTAINER=docker
+
+  extension:
+    # The VS Code extension (extension/): build, types, lint, unit tests, packaging, and a real VS Code at the engine floor.
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: extension
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: extension/package-lock.json
+      - run: npm ci
+      - run: npm run build
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      # What ships to users must be clean. Dev-tool advisories are reviewed by hand (see the plan's Task 1 notes).
+      - run: npm audit --omit=dev --audit-level=high
+      - run: npm run package
+      - run: xvfb-run -a npm run test:integration

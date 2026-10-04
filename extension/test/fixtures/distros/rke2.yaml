@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Config
+contexts:
+  - name: default
+    context: {cluster: default, user: default}
+clusters:
+  - name: default
+    cluster: {server: "https://10.0.0.7:6443", certificate-authority: /var/lib/rancher/rke2/server/tls/server-ca.crt}
+users:
+  - name: default
+    user: {client-certificate: /etc/rancher/rke2/client.crt, client-key: /etc/rancher/rke2/client.key}

@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Config
+contexts:
+  - name: custom
+    context: {cluster: c, user: u}
+clusters:
+  - name: c
+    cluster: {server: "https://custom.example.com"}
+users:
+  - name: u
+    user: {exec: {command: ./weird-plugin.exe, args: [--x]}}
