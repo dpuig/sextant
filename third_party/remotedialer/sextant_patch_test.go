@@ -2,6 +2,7 @@ package remotedialer
 
 import (
 	"context"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -279,4 +280,48 @@ func TestServerOnSessionChange_StaleDisconnectCannotOverwriteReconnect(t *testin
 	if !last {
 		t.Fatal("stale 'disconnected' overwrote the newer 'connected': status would be wrong until the next event")
 	}
+}
+
+// Patch 6: the ping/pong handlers ran on the read goroutine and called SetWriteDeadline without the write lock, while
+// the same connection was being written under it. gorilla's SetWriteDeadline stores a plain field that WriteMessage
+// reads, so each ping raced with in-flight traffic. Found by the race detector on a CI runner. Run with -race.
+func TestPingHandlersDoNotRaceWithConcurrentWrites(t *testing.T) {
+	quietLogs(t)
+	SetLiveness(2*time.Millisecond, 5*time.Second) // pings arrive constantly
+	t.Cleanup(func() { SetLiveness(DefaultPingWriteInterval, DefaultPingWaitDuration) })
+
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write(make([]byte, 4096))
+	}))
+	defer target.Close()
+
+	rd, ts := newPatchTestServer(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_ = ConnectToProxy(ctx, wsURL(ts), nil, func(string, string) bool { return true }, &websocket.Dialer{}, nil)
+	}()
+	waitFor(t, "session", func() bool { return rd.HasSession("agent") })
+
+	client := &http.Client{Transport: &http.Transport{DialContext: rd.Dialer("agent")}, Timeout: 5 * time.Second}
+	var wg sync.WaitGroup
+	for g := 0; g < 8; g++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := 0; i < 60; i++ {
+				resp, err := client.Get(target.URL)
+				if err != nil {
+					return
+				}
+				_, _ = io.Copy(io.Discard, resp.Body)
+				_ = resp.Body.Close()
+			}
+		}()
+	}
+	wg.Wait()
+	cancel()
+	<-done
 }

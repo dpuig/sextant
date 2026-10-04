@@ -78,6 +78,14 @@ func (w *wsWrapper) Close() error {
 
 func (w *wsWrapper) setupDeadline() {
 	w.conn.SetReadDeadline(time.Now().Add(pingWaitDuration()))
+	// sextant patch: these handlers run on the read goroutine. SetWriteDeadline stores a plain field that a concurrent
+	// WriteMessage reads, so it must be called under the same lock that serialises writes. (SetReadDeadline is safe
+	// here: only this goroutine reads.)
+	setWriteDeadline := func() error {
+		w.Lock()
+		defer w.Unlock()
+		return w.conn.SetWriteDeadline(time.Now().Add(pingWaitDuration()))
+	}
 	w.conn.SetPingHandler(func(string) error {
 		w.Lock()
 		err := w.conn.WriteControl(websocket.PongMessage, []byte(""), time.Now().Add(pingWaitDuration()))
@@ -88,13 +96,12 @@ func (w *wsWrapper) setupDeadline() {
 		if err := w.conn.SetReadDeadline(time.Now().Add(pingWaitDuration())); err != nil {
 			return err
 		}
-		return w.conn.SetWriteDeadline(time.Now().Add(pingWaitDuration()))
+		return setWriteDeadline()
 	})
 	w.conn.SetPongHandler(func(string) error {
 		if err := w.conn.SetReadDeadline(time.Now().Add(pingWaitDuration())); err != nil {
 			return err
 		}
-		return w.conn.SetWriteDeadline(time.Now().Add(pingWaitDuration()))
+		return setWriteDeadline()
 	})
-
 }

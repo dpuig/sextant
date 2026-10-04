@@ -24,4 +24,7 @@ Each patch has a test in this directory (`sextant_patch_test.go`).
 5. **`Server.OnSessionChange`.** A callback fired after a client session is added or
    removed, so the management plane can record cluster connectivity.
 
+6. **Data race in the ping/pong handlers.** They called `SetWriteDeadline` on the read goroutine without the write lock,
+   racing with in-flight writes (found by the race detector on a CI runner). Now done under the write lock.
+
 Upstream these when practical; drop the patch when upstream ships the fix.

@@ -158,7 +158,7 @@ docs/                specs, ADRs, testing notes
 - **Security-relevant behavior is mutation-tested.** For each guard (allow-list,
   revocation, identity parsing, single-use tokens, header stripping, RLS, chart
   hardening) the guarding test was shown to fail when the guard is removed.
-- **`-race` clean**, including the vendored library, where we fixed two data races and an event-ordering bug.
+- **`-race` clean**, including the vendored library, where we fixed three data races and an event-ordering bug.
 - **Real dependencies in tests:** Postgres for storage and the API, kind for
   end-to-end. The e2e suite has already caught two deployment bugs unit tests could not.
 - Every non-trivial decision is recorded: [ADR 0001](docs/adr/0001-api-server-shape.md)
