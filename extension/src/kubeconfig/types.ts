@@ -27,6 +27,8 @@ export interface KubeContext {
   serverHost?: string;
   /** The file that defined this context (the first one wins, as in kubectl). */
   sourceFile: string;
+  /** 1-based line of the context entry in `sourceFile`, when known. */
+  sourceLine?: number;
   credential: CredentialSummary;
   /** Best-effort hosting platform, for grouping only; `unknown` when it cannot be told. */
   provider: string;

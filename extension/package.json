@@ -15,7 +15,7 @@
     "url": "https://github.com/dpuig/sextant/issues"
   },
   "engines": {
-    "vscode": "^1.90.0",
+    "vscode": "^1.93.0",
     "node": ">=20"
   },
   "categories": [
@@ -35,7 +35,7 @@
         {
           "id": "sextant",
           "title": "Sextant",
-          "icon": "media/sextant.svg"
+          "icon": "media/sextant-activity.svg"
         }
       ]
     },
@@ -44,57 +44,155 @@
         {
           "id": "sextant.fleet",
           "name": "Fleet"
+        },
+        {
+          "id": "sextant.audit",
+          "name": "Credential Audit",
+          "visibility": "collapsed"
         }
       ]
     },
     "viewsWelcome": [
       {
         "view": "sextant.fleet",
-        "contents": "No kubeconfig contexts found.\n\nSextant reads the files in your KUBECONFIG, or ~/.kube/config. You can add more files in settings.\n[Open settings](command:workbench.action.openSettings?%5B%22sextant.kubeconfigPaths%22%5D)",
-        "when": "!sextant.hasContexts"
+        "when": "sextant.noKubeconfig",
+        "contents": "No kubeconfig found.\n\nSextant looks in ~/.kube/config and the files listed in KUBECONFIG. Nothing leaves your machine.\n[Open settings](command:workbench.action.openSettings?%5B%22sextant.kubeconfigPaths%22%5D)\n[How Sextant finds kubeconfig files](https://github.com/dpuig/sextant#how-sextant-finds-kubeconfig-files)"
+      },
+      {
+        "view": "sextant.fleet",
+        "when": "sextant.filterActive && sextant.filterEmpty",
+        "contents": "No contexts match the filter.\n[Clear filter](command:sextant.clearFilter)"
       }
     ],
     "commands": [
       {
-        "command": "sextant.showVersion",
-        "title": "Show Version",
+        "command": "sextant.openTerminal",
+        "title": "Open Terminal for Cluster…",
         "category": "Sextant"
       },
       {
-        "command": "sextant.fleet.refresh",
+        "command": "sextant.openTerminalForItem",
+        "title": "Open Terminal for This Cluster",
+        "category": "Sextant"
+      },
+      {
+        "command": "sextant.tagCluster",
+        "title": "Tag Cluster…",
+        "category": "Sextant"
+      },
+      {
+        "command": "sextant.filter",
+        "title": "Filter Clusters…",
+        "category": "Sextant",
+        "icon": "$(search)"
+      },
+      {
+        "command": "sextant.clearFilter",
+        "title": "Clear Filter",
+        "category": "Sextant",
+        "icon": "$(search-stop)"
+      },
+      {
+        "command": "sextant.refresh",
         "title": "Refresh",
         "category": "Sextant",
         "icon": "$(refresh)"
       },
       {
-        "command": "sextant.fleet.filter",
-        "title": "Filter Clusters",
-        "category": "Sextant",
-        "icon": "$(search)"
+        "command": "sextant.copyContextName",
+        "title": "Copy Context Name",
+        "category": "Sextant"
       },
       {
-        "command": "sextant.fleet.clearFilter",
-        "title": "Clear Filter",
+        "command": "sextant.revealKubeconfig",
+        "title": "Reveal Kubeconfig File",
+        "category": "Sextant"
+      },
+      {
+        "command": "sextant.copyAuditReport",
+        "title": "Copy Audit Report",
         "category": "Sextant",
-        "icon": "$(clear-all)"
+        "icon": "$(copy)"
+      },
+      {
+        "command": "sextant.openAuditReport",
+        "title": "Open Audit Report",
+        "category": "Sextant",
+        "icon": "$(open-preview)"
+      },
+      {
+        "command": "sextant.gettingStarted",
+        "title": "Get Started",
+        "category": "Sextant"
       }
     ],
     "menus": {
       "view/title": [
         {
-          "command": "sextant.fleet.filter",
-          "when": "view == sextant.fleet && !sextant.filtered",
+          "command": "sextant.filter",
+          "when": "view == sextant.fleet && !sextant.filterActive",
           "group": "navigation@1"
         },
         {
-          "command": "sextant.fleet.clearFilter",
-          "when": "view == sextant.fleet && sextant.filtered",
+          "command": "sextant.clearFilter",
+          "when": "view == sextant.fleet && sextant.filterActive",
           "group": "navigation@1"
         },
         {
-          "command": "sextant.fleet.refresh",
+          "command": "sextant.refresh",
           "when": "view == sextant.fleet",
           "group": "navigation@2"
+        },
+        {
+          "command": "sextant.copyAuditReport",
+          "when": "view == sextant.audit",
+          "group": "navigation@1"
+        },
+        {
+          "command": "sextant.openAuditReport",
+          "when": "view == sextant.audit",
+          "group": "navigation@2"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "sextant.openTerminalForItem",
+          "when": "view == sextant.fleet && viewItem == context",
+          "group": "1_open@1"
+        },
+        {
+          "command": "sextant.tagCluster",
+          "when": "view == sextant.fleet && viewItem == context",
+          "group": "2_manage@1"
+        },
+        {
+          "command": "sextant.copyContextName",
+          "when": "view == sextant.fleet && viewItem == context",
+          "group": "3_copy@1"
+        },
+        {
+          "command": "sextant.revealKubeconfig",
+          "when": "view == sextant.fleet && viewItem == context",
+          "group": "3_copy@2"
+        },
+        {
+          "command": "sextant.revealKubeconfig",
+          "when": "view == sextant.audit && viewItem == auditRow",
+          "group": "1_fix@1"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "sextant.openTerminalForItem",
+          "when": "false"
+        },
+        {
+          "command": "sextant.revealKubeconfig",
+          "when": "false"
+        },
+        {
+          "command": "sextant.copyContextName",
+          "when": "false"
         }
       ]
     },
@@ -109,9 +207,200 @@
           "default": [],
           "scope": "machine",
           "markdownDescription": "Additional kubeconfig files to read, after those in `KUBECONFIG` (or `~/.kube/config`). `~` is expanded. They are read last, so they can never override your real configuration."
+        },
+        "sextant.tags": {
+          "type": "array",
+          "default": [],
+          "scope": "application",
+          "markdownDescription": "Environment tags by context name. Each rule is `{ \"match\": \"prod-*\", \"environment\": \"prod\", \"critical\": true }`; an exact name beats a glob, then the first matching glob wins. Stored in user settings only, so a repository cannot downgrade production. Use **Sextant: Tag Cluster…** to edit.",
+          "items": {
+            "type": "object",
+            "required": [
+              "match",
+              "environment"
+            ],
+            "properties": {
+              "match": {
+                "type": "string"
+              },
+              "environment": {
+                "type": "string"
+              },
+              "critical": {
+                "type": "boolean"
+              }
+            }
+          }
+        },
+        "sextant.confirm.skip": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "scope": "application",
+          "markdownDescription": "Critical contexts for which Sextant does not ask before opening a terminal. Added by choosing *Open, and don't ask again for this cluster*."
         }
       }
-    }
+    },
+    "keybindings": [
+      {
+        "command": "sextant.openTerminal",
+        "key": "ctrl+alt+shift+t",
+        "mac": "cmd+alt+shift+t"
+      },
+      {
+        "command": "sextant.openTerminalForItem",
+        "key": "ctrl+enter",
+        "mac": "cmd+enter",
+        "when": "focusedView == sextant.fleet"
+      },
+      {
+        "command": "sextant.clearFilter",
+        "key": "escape",
+        "when": "focusedView == sextant.fleet && sextant.filterActive"
+      },
+      {
+        "command": "sextant.copyContextName",
+        "key": "ctrl+c",
+        "mac": "cmd+c",
+        "when": "focusedView == sextant.fleet"
+      }
+    ],
+    "colors": [
+      {
+        "id": "sextant.env.prodForeground",
+        "description": "Prod environment icon.",
+        "defaults": {
+          "dark": "list.errorForeground",
+          "light": "list.errorForeground",
+          "highContrast": "errorForeground",
+          "highContrastLight": "errorForeground"
+        }
+      },
+      {
+        "id": "sextant.env.stagingForeground",
+        "description": "Staging environment icon.",
+        "defaults": {
+          "dark": "list.warningForeground",
+          "light": "list.warningForeground",
+          "highContrast": "editorWarning.foreground",
+          "highContrastLight": "editorWarning.foreground"
+        }
+      },
+      {
+        "id": "sextant.env.devForeground",
+        "description": "Dev environment icon.",
+        "defaults": {
+          "dark": "charts.green",
+          "light": "charts.green",
+          "highContrast": "charts.green",
+          "highContrastLight": "charts.green"
+        }
+      },
+      {
+        "id": "sextant.env.untaggedForeground",
+        "description": "Untagged environment icon.",
+        "defaults": {
+          "dark": "icon.foreground",
+          "light": "icon.foreground",
+          "highContrast": "icon.foreground",
+          "highContrastLight": "icon.foreground"
+        }
+      },
+      {
+        "id": "sextant.risk.expiredForeground",
+        "description": "Expired credential icon.",
+        "defaults": {
+          "dark": "list.errorForeground",
+          "light": "list.errorForeground",
+          "highContrast": "errorForeground",
+          "highContrastLight": "errorForeground"
+        }
+      },
+      {
+        "id": "sextant.risk.longLivedForeground",
+        "description": "Long-lived credential icon.",
+        "defaults": {
+          "dark": "list.warningForeground",
+          "light": "list.warningForeground",
+          "highContrast": "editorWarning.foreground",
+          "highContrastLight": "editorWarning.foreground"
+        }
+      },
+      {
+        "id": "sextant.risk.expiringForeground",
+        "description": "Credential expiring within 30 days.",
+        "defaults": {
+          "dark": "editorInfo.foreground",
+          "light": "editorInfo.foreground",
+          "highContrast": "editorInfo.foreground",
+          "highContrastLight": "editorInfo.foreground"
+        }
+      },
+      {
+        "id": "sextant.risk.shortLivedForeground",
+        "description": "Short-lived or brokered credential.",
+        "defaults": {
+          "dark": "charts.green",
+          "light": "charts.green",
+          "highContrast": "charts.green",
+          "highContrastLight": "charts.green"
+        }
+      },
+      {
+        "id": "sextant.currentContextForeground",
+        "description": "Check mark on the current context.",
+        "defaults": {
+          "dark": "charts.green",
+          "light": "charts.green",
+          "highContrast": "charts.green",
+          "highContrastLight": "charts.green"
+        }
+      }
+    ],
+    "walkthroughs": [
+      {
+        "id": "sextant.gettingStarted",
+        "title": "Get started with Sextant",
+        "description": "See every cluster, tell production apart, stay on the right one.",
+        "steps": [
+          {
+            "id": "found",
+            "title": "We found your clusters",
+            "description": "Sextant read your kubeconfig files on this machine. Nothing was sent anywhere. Open the Fleet view to see the count.\n[Show Fleet](command:sextant.fleet.focus)",
+            "media": {
+              "markdown": "media/walkthrough/found.md"
+            },
+            "completionEvents": [
+              "onView:sextant.fleet"
+            ]
+          },
+          {
+            "id": "tag",
+            "title": "Tag production so you can tell it apart",
+            "description": "Mark prod contexts as critical. They get a warning icon, a red status bar item and a confirmation before terminals open.\n[Tag a Cluster](command:sextant.tagCluster)",
+            "media": {
+              "markdown": "media/walkthrough/tag.md"
+            },
+            "completionEvents": [
+              "onCommand:sextant.tagCluster"
+            ]
+          },
+          {
+            "id": "terminal",
+            "title": "Open a terminal that cannot drift",
+            "description": "A bound terminal keeps its cluster even if someone runs kubectl config use-context elsewhere.\n[Open Terminal for Cluster](command:sextant.openTerminal)",
+            "media": {
+              "markdown": "media/walkthrough/terminal.md"
+            },
+            "completionEvents": [
+              "onCommand:sextant.openTerminal"
+            ]
+          }
+        ]
+      }
+    ]
   },
   "scripts": {
     "build": "node esbuild.mjs",
@@ -129,7 +418,7 @@
   "devDependencies": {
     "@eslint/js": "^9.0.0",
     "@types/node": "^20.0.0",
-    "@types/vscode": "1.90.0",
+    "@types/vscode": "1.93.0",
     "@vitest/coverage-v8": "^3.2.7",
     "@vscode/test-electron": "^2.4.0",
     "@vscode/vsce": "^3.0.0",
@@ -144,6 +433,6 @@
     "yaml": "^2.9.1"
   },
   "activationEvents": [
-    "onView:sextant.fleet"
+    "onStartupFinished"
   ]
 }

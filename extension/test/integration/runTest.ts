@@ -46,7 +46,11 @@ async function main(): Promise<void> {
     version,
     extensionDevelopmentPath,
     extensionTestsPath,
-    extensionTestsEnv: { KUBECONFIG: [main, canary].join(path.delimiter), SEXTANT_IT_MAIN: main },
+    extensionTestsEnv: {
+      KUBECONFIG: [main, canary].join(path.delimiter),
+      SEXTANT_IT_MAIN: main,
+      SEXTANT_NO_WELCOME: '1',
+    },
     // A throwaway profile: tests never touch the developer's settings or extensions.
     launchArgs: ['--disable-extensions', '--disable-workspace-trust'],
   });

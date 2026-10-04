@@ -55,7 +55,7 @@ in depth; E2-E6 are outlined only and each gets its own spec at the previous mil
 
 ## Tech Stack
 
-- TypeScript (strict), VS Code engine `^1.90` (pin when the first task lands), Node as provided by the host.
+- TypeScript (strict), VS Code engine `^1.93` (the floor for shell-integration events; `@types/vscode` is pinned to the same version), Node as provided by the host.
 - Bundler: esbuild. Tests: Vitest (unit), `@vscode/test-electron` (integration).
 - Packaging: `@vscode/vsce` (Marketplace), `ovsx` (Open VSX), platform-specific targets for the `kx` binary from E2.
 - Runtime dependencies: as few as possible; a YAML parser for kubeconfig is the expected one.
@@ -83,7 +83,7 @@ Run locally:   code --extensionDevelopmentPath=$(pwd)          # or F5
 
 ```
 extension/
-  src/extension.ts          activation, wiring (lazy: onView / onCommand)
+  src/extension.ts          activation, wiring (eager: onStartupFinished, so the status bar and badge need no click)
   src/kubeconfig/           discovery, parsing, merge, credential classification (pure, no vscode import)
   src/model/                Cluster/Context model, tags, environment rules (pure)
   src/views/                TreeView providers, status bar, QuickPick flows
@@ -149,7 +149,7 @@ module boundaries, no side effects at import time, every public function documen
 |---|---|---|
 | Unit | Vitest | kubeconfig discovery/merge precedence, exec-plugin and OIDC shapes, classification, env rules, expiry maths. Real-world fixtures (EKS, GKE, AKS, kind, k3s, RKE2, OpenShift) |
 | Security | Vitest | **Canary test**: fixtures contain unique fake secrets; assert none appears in any log line, error message, tree label, tooltip, report or telemetry payload |
-| Integration | `@vscode/test-electron` | activation is lazy and fast, tree renders, status bar reacts to context change, terminal gets the bound kubeconfig |
+| Integration | `@vscode/test-electron` | activation is eager and fast, tree renders, status bar reacts to context change, terminal gets the bound kubeconfig |
 | E2E | kind (reuse `make e2e` rig) | bound terminal really cannot touch another cluster; audit against a live kubeconfig |
 | Manual | checklist in `docs/testing/extension.md` | Windows path/exec-plugin quirks, Remote/WSL/Dev Containers, Cursor/VSCodium via Open VSX |
 
@@ -159,7 +159,7 @@ Coverage target: >= 90% on `kubeconfig/` and `model/`; the glue in `views/` is c
 
 - **Always:** keep kubeconfig parsing pure and tested against real fixtures; treat every kubeconfig
   as containing secrets; show classification, never values; confirm before opening a terminal on a critical
-  context; run the canary test in CI; lazy-activate.
+  context; run the canary test in CI; activate on `onStartupFinished` (never at VS Code start-up proper).
 - **Ask first:** adding a runtime dependency; enabling any telemetry or network call at all in E1;
   changing `contributes` (views/commands/config) after first publish; publishing a release.
 - **Never:** upload, transmit or persist kubeconfig contents or tokens; run `kubectl` with write
@@ -176,7 +176,7 @@ Coverage target: >= 90% on `kubeconfig/` and `model/`; the glue in `views/` is c
       opening a terminal on it requires confirmation, and an external switch to it raises a warning; a bound terminal's `kubectl config current-context`
       cannot change when the global context changes (e2e on kind).
 - [ ] **Secrets:** the canary test passes: no fixture secret appears in any output surface.
-- [ ] **Performance:** activation under 200 ms; bundle under 2 MB (E1, no binaries).
+- [ ] **Performance:** activation under 200 ms (reading starts after activation returns); bundle under 2 MB (E1, no binaries).
 - [ ] **Reach:** installs and passes the integration suite on macOS, Linux and Windows; published to
       both the VS Code Marketplace and Open VSX; works in Remote-SSH, WSL and Dev Containers.
 - [ ] **Quality bar:** typecheck, lint, unit, integration green in CI; every security-relevant

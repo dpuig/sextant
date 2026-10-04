@@ -73,7 +73,7 @@ Declares `license: Apache-2.0` and includes `LICENSE`. Publisher and extension n
 **Verification:** the five npm commands above; open the VSIX contents (`unzip -l`) and check size and `LICENSE`.
 
 **Done (2026-10-04).** Build, typecheck, lint, unit and integration tests pass; the VSIX is 7.4 KB and carries `LICENSE` and
-`NOTICE`; integration runs on a real VS Code 1.90.0 (the engine floor, overridable with `VSCODE_TEST_VERSION`). Notes:
+`NOTICE`; integration runs on a real VS Code 1.93.0 (the engine floor, overridable with `VSCODE_TEST_VERSION`). Notes:
 - The test runner clears `ELECTRON_RUN_AS_NODE`: editor-hosted terminals set it and Electron then rejects VS Code's flags.
 - `@types/vscode` is pinned to the engine floor (a unit test enforces it) so newer APIs cannot slip in.
 - **Accepted dev-tool advisories** (`npm audit`: 8, all dev-only; the production tree has 0 and CI enforces that):
@@ -379,7 +379,7 @@ fail without it; docs updated next to the code; no secret in code, tests, logs o
 1. **Read-only vs a scoped `current-context` write.** This plan keeps E1 read-only (see above). Confirm, or choose to
    allow a confirmed `use-context` write.
 2. **Approve the `yaml` runtime dependency** (the spec's "ask first" rule).
-3. **Minimum VS Code version** (proposed `^1.90`).
+3. **Minimum VS Code version**: decided, `^1.93` (shell-integration events).
 4. **Publisher and extension names** and the trademark check; only T14's publish step needs them.
 5. **Which real kubeconfigs to dogfood on** at Checkpoints 2 and 3 (yours, plus a design partner's, scrubbed).
 6. **Telemetry:** E1 ships none and makes no network calls; confirm that is the intended first release.

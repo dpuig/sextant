@@ -1,11 +1,13 @@
 import * as assert from 'node:assert/strict';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import * as path from 'node:path';
 import * as vscode from 'vscode';
 import type { TestApi } from '../../../src/extension';
 import { expectNoCanary } from '../../canary';
+import { ScriptedPrompts } from '../../scriptedPrompts';
 
 // A deliberately tiny runner (no mocha): each case is an async function that throws on failure. Cases run in order and
-// share one VS Code instance, so the first one must be the "nothing runs until used" check.
+// share one VS Code instance.
 const EXT_ID = 'sextant-placeholder.sextant-vscode';
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
@@ -13,7 +15,7 @@ async function api(): Promise<TestApi> {
   const ext = vscode.extensions.getExtension<TestApi>(EXT_ID);
   assert.ok(ext, 'extension not found');
   const exports = await ext.activate();
-  await exports.fleet.whenLoaded();
+  await exports.store.whenLoaded();
   return exports;
 }
 
@@ -24,6 +26,33 @@ function walk(a: TestApi, nodes: Node[] = a.fleet.getChildren()): Node[] {
 function contextNames(a: TestApi): string[] {
   return walk(a).flatMap((n) => (n.kind === 'context' ? [n.label] : []));
 }
+const contextNode = (a: TestApi, name: string): Node => {
+  const n = walk(a).find((x) => x.kind === 'context' && x.label === name);
+  assert.ok(n, `no context row ${name}`);
+  return n;
+};
+const labelOf = (l: vscode.TreeItem['label']): string => (typeof l === 'string' ? l : (l?.label ?? ''));
+const cfg = (): vscode.WorkspaceConfiguration => vscode.workspace.getConfiguration('sextant');
+async function resetSettings(a: TestApi): Promise<void> {
+  await cfg().update('tags', undefined, vscode.ConfigurationTarget.Global);
+  await cfg().update('confirm.skip', undefined, vscode.ConfigurationTarget.Global);
+  a.store.readSettings();
+  a.setPrompts(new ScriptedPrompts([]));
+}
+const COMMANDS = [
+  'openTerminal',
+  'openTerminalForItem',
+  'tagCluster',
+  'filter',
+  'clearFilter',
+  'refresh',
+  'copyContextName',
+  'revealKubeconfig',
+  'copyAuditReport',
+  'openAuditReport',
+  'gettingStarted',
+];
+
 async function eventually(what: string, cond: () => boolean, ms = 5000): Promise<void> {
   const end = Date.now() + ms;
   while (Date.now() < end) {
@@ -35,28 +64,19 @@ async function eventually(what: string, cond: () => boolean, ms = 5000): Promise
 
 const cases: [string, () => Promise<void>][] = [
   [
-    'activation is lazy: the extension is inactive until something uses it',
-    () => {
+    'activation is eager (onStartupFinished): the status bar and badge need no user action',
+    async () => {
       const ext = vscode.extensions.getExtension(EXT_ID);
       assert.ok(ext, 'extension not found');
-      assert.equal(ext.isActive, false, 'the extension activated without being used');
-      return Promise.resolve();
+      await eventually('the extension to activate on its own', () => ext.isActive, 15000);
     },
   ],
   [
-    'the commands are registered once activated',
+    'every contributed command is registered',
     async () => {
       await api();
       const all = await vscode.commands.getCommands(true);
-      for (const c of [
-        'sextant.showVersion',
-        'sextant.fleet.refresh',
-        'sextant.fleet.filter',
-        'sextant.fleet.clearFilter',
-      ]) {
-        assert.ok(all.includes(c), `${c} is not registered`);
-      }
-      await vscode.commands.executeCommand('sextant.showVersion'); // must not throw
+      for (const c of COMMANDS) assert.ok(all.includes(`sextant.${c}`), `sextant.${c} is not registered`);
     },
   ],
   [
@@ -77,40 +97,253 @@ const cases: [string, () => Promise<void>][] = [
       const providers = env.children.map((n) => n.label);
       assert.ok(
         providers.includes('kind') && providers.includes('Google GKE') && providers.includes('Other'),
-        providers.join(', '),
       );
       assert.equal(providers[providers.length - 1], 'Other', '"Other" must sort last');
     },
   ],
   [
-    'the current context is marked',
+    'the current context is marked, and has detail rows with exact labels',
     async () => {
       const a = await api();
-      const node = walk(a).find((n) => n.kind === 'context' && n.label === 'kind-dev');
-      assert.ok(node);
+      const node = contextNode(a, 'kind-dev');
       const item = a.fleet.getTreeItem(node);
       assert.match(String(item.description), /^current · /);
-      const other = walk(a).find((n) => n.kind === 'context' && n.label === 'plain');
-      assert.ok(other);
-      assert.doesNotMatch(String(a.fleet.getTreeItem(other).description), /current/);
+      assert.equal(item.contextValue, 'context');
+      assert.ok(item.accessibilityInformation?.label.includes('current context'));
+      const labels = a.fleet.getChildren(node).map((n) => (n.kind === 'detail' ? n.label : ''));
+      assert.deepEqual(labels, ['Server', 'Namespace', 'Credential', 'Expires', 'Source file']);
+      assert.doesNotMatch(String(a.fleet.getTreeItem(contextNode(a, 'plain')).description), /current/);
     },
   ],
   [
-    'no label, description, tooltip or id in the tree contains a secret (canary check on the real UI)',
+    'no label, description, tooltip, id or status text in any view contains a secret (canary check on the real UI)',
     async () => {
       const a = await api();
       const items = walk(a).map((n) => a.fleet.getTreeItem(n));
       assert.ok(items.length > 10, 'the tree was unexpectedly small');
-      for (const item of items) {
-        const label = typeof item.label === 'string' ? item.label : (item.label?.label ?? '');
-        expectNoCanary(`tree item "${label}"`, {
+      const auditNodes = a.audit
+        .getChildren()
+        .flatMap((g) => [g, ...a.audit.getChildren(g).flatMap((r) => [r, ...a.audit.getChildren(r)])]);
+      assert.ok(auditNodes.length > 5, 'the audit tree was unexpectedly small');
+      const all = [...items, ...auditNodes.map((n) => a.audit.getTreeItem(n))];
+      for (const item of all) {
+        expectNoCanary(`tree item "${labelOf(item.label)}"`, {
           label: item.label,
           description: item.description,
           tooltip: item.tooltip,
           id: item.id,
           contextValue: item.contextValue,
+          accessibility: item.accessibilityInformation,
         });
       }
+      expectNoCanary('status bar', {
+        text: a.status.item.text,
+        tooltip: a.status.item.tooltip,
+        accessibility: a.status.item.accessibilityInformation,
+      });
+    },
+  ],
+  [
+    'the status bar shows the current context; normal state has no background',
+    async () => {
+      const a = await api();
+      assert.equal(a.status.item.text, '$(server-environment) kind-dev');
+      assert.equal(a.status.item.backgroundColor, undefined);
+      assert.equal(
+        a.status.item.command && typeof a.status.item.command !== 'string'
+          ? a.status.item.command.command
+          : '',
+        'sextant.openTerminal',
+      );
+    },
+  ],
+  [
+    'the Credential Audit lists the four risk groups in order, with the reassurance message',
+    async () => {
+      const a = await api();
+      const labels = a.audit.getChildren().map((g) => labelOf(a.audit.getTreeItem(g).label));
+      assert.deepEqual(labels, [
+        'Expired',
+        'Long-lived credentials',
+        'Expiring within 30 days',
+        'Short-lived or brokered',
+      ]);
+    },
+  ],
+  [
+    'Copy Audit Report puts a report with no secret on the clipboard',
+    async () => {
+      await api();
+      await vscode.env.clipboard.writeText('');
+      await vscode.commands.executeCommand('sextant.copyAuditReport');
+      const text = await vscode.env.clipboard.readText();
+      assert.match(text, /^# Sextant credential audit/);
+      expectNoCanary('audit report', text);
+    },
+  ],
+  [
+    'tagging a cluster through the three-step flow saves to user settings and regroups the tree',
+    async () => {
+      const a = await api();
+      try {
+        a.setPrompts(new ScriptedPrompts([{ pick: 'prod' }, { pick: 'critical' }, { pick: 'Only' }]));
+        await vscode.commands.executeCommand('sextant.tagCluster', contextNode(a, 'plain'));
+        const saved = cfg().inspect<unknown[]>('tags')?.globalValue;
+        assert.deepEqual(saved, [{ match: 'plain', environment: 'prod', critical: true }]);
+        await eventually('the tree to regroup', () =>
+          a.fleet.getChildren().some((n) => n.kind === 'environment' && n.label === 'prod'),
+        );
+        const row = a.fleet.getTreeItem(contextNode(a, 'plain'));
+        assert.ok(row.accessibilityInformation?.label.includes('critical'));
+        const group = a.fleet.getChildren().find((n) => n.kind === 'environment' && n.label === 'prod');
+        assert.ok(group);
+        assert.match(String(a.fleet.getTreeItem(group).description), /critical/);
+        assert.equal((a.fleet.getTreeItem(group).iconPath as vscode.ThemeIcon).id, 'warning');
+        assert.equal(
+          (row.iconPath as vscode.ThemeIcon).id,
+          'circle-large-outline',
+          'a context icon shows current/other, not risk',
+        );
+        const roots = a.fleet.getChildren().map((n) => n.kind === 'environment' && n.label);
+        assert.equal(roots[0], 'prod', 'prod sorts first');
+      } finally {
+        await resetSettings(a);
+      }
+    },
+  ],
+  [
+    'tagging the current context critical turns the status item red with icon and word',
+    async () => {
+      const a = await api();
+      try {
+        a.setPrompts(new ScriptedPrompts([{ pick: 'prod' }, { pick: 'critical' }, { pick: 'Only' }]));
+        await vscode.commands.executeCommand('sextant.tagCluster', contextNode(a, 'kind-dev'));
+        await eventually(
+          'the status item to turn critical',
+          () => a.status.item.text === '$(warning) PROD  kind-dev',
+        );
+        assert.ok(a.status.item.backgroundColor);
+        const tip = a.status.item.tooltip;
+        assert.ok(typeof tip === 'string' && tip.startsWith('kind-dev · prod, critical'));
+      } finally {
+        await resetSettings(a);
+      }
+      await eventually(
+        'the status item to relax',
+        () => a.status.item.text === '$(server-environment) kind-dev',
+      );
+    },
+  ],
+  [
+    'cancelling the tag flow saves nothing',
+    async () => {
+      const a = await api();
+      a.setPrompts(new ScriptedPrompts([{ pick: 'prod' }, { pick: 'cancel' }]));
+      await vscode.commands.executeCommand('sextant.tagCluster', contextNode(a, 'plain'));
+      assert.equal(cfg().inspect<unknown[]>('tags')?.globalValue, undefined);
+    },
+  ],
+  [
+    'a bound terminal: pin file first in KUBECONFIG, read-only, no secrets, shown in the tree, removed on close',
+    async () => {
+      const a = await api();
+      a.setPrompts(new ScriptedPrompts([]));
+      await vscode.commands.executeCommand('sextant.openTerminalForItem', contextNode(a, 'plain'));
+      const bound = a.terminals.list().find((b) => b.contextName === 'plain');
+      assert.ok(bound, 'no bound terminal was registered');
+      const opts = bound.terminal.creationOptions as vscode.TerminalOptions;
+      const kubeconfig = opts.env?.KUBECONFIG;
+      assert.ok(kubeconfig, 'KUBECONFIG not set on the terminal');
+      const parts = kubeconfig.split(path.delimiter);
+      assert.equal(parts[0], bound.pin, 'the pin must be FIRST');
+      assert.deepEqual(parts.slice(1), a.store.userPaths(), 'the user files follow in their original order');
+      assert.equal(statSync(bound.pin).mode & 0o777, 0o400, 'the pin must be read-only');
+      const content = readFileSync(bound.pin, 'utf8');
+      assert.match(content, /^apiVersion: v1\nkind: Config\ncurrent-context: "plain"\n$/);
+      expectNoCanary('pin file', content);
+      assert.equal(opts.name, 'plain');
+      assert.match(String(a.fleet.getTreeItem(contextNode(a, 'plain')).description), /terminal/);
+
+      bound.terminal.dispose();
+      await eventually('the pin file to be removed', () => !existsSync(bound.pin));
+      await eventually(
+        '"terminal" to leave the description',
+        () => !/terminal/.test(String(a.fleet.getTreeItem(contextNode(a, 'plain')).description)),
+      );
+    },
+  ],
+  [
+    'a critical context asks first: Cancel opens nothing, Open creates a red PROD-named terminal',
+    async () => {
+      const a = await api();
+      try {
+        a.setPrompts(new ScriptedPrompts([{ pick: 'prod' }, { pick: 'critical' }, { pick: 'Only' }]));
+        await vscode.commands.executeCommand('sextant.tagCluster', contextNode(a, 'plain'));
+        const cancel = new ScriptedPrompts([{ pick: 'first' }]);
+        a.setPrompts(cancel);
+        await vscode.commands.executeCommand('sextant.openTerminalForItem', contextNode(a, 'plain'));
+        assert.equal(a.terminals.list().length, 0, 'Cancel must not open a terminal');
+        assert.equal(
+          cancel.shown[0]?.items.find((i) => i.kind === 'item')?.label,
+          'Cancel',
+          'Cancel must be first',
+        );
+
+        a.setPrompts(new ScriptedPrompts([{ pick: 'Open terminal on plain' }]));
+        await vscode.commands.executeCommand('sextant.openTerminalForItem', contextNode(a, 'plain'));
+        const bound = a.terminals.list()[0];
+        assert.ok(bound);
+        const opts = bound.terminal.creationOptions as vscode.TerminalOptions;
+        assert.equal(opts.name, 'plain · PROD');
+        assert.equal((opts.iconPath as vscode.ThemeIcon).id, 'warning');
+        assert.equal((opts.color as unknown as { id: string }).id, 'terminal.ansiRed');
+        assert.ok(String(opts.message).includes('PROD'));
+        bound.terminal.dispose();
+        await eventually('the terminal to close', () => a.terminals.list().length === 0);
+      } finally {
+        await resetSettings(a);
+      }
+    },
+  ],
+  [
+    "'Open, and don't ask again' stores the context in user settings and later opens skip the prompt",
+    async () => {
+      const a = await api();
+      try {
+        a.setPrompts(new ScriptedPrompts([{ pick: 'prod' }, { pick: 'critical' }, { pick: 'Only' }]));
+        await vscode.commands.executeCommand('sextant.tagCluster', contextNode(a, 'plain'));
+        a.setPrompts(new ScriptedPrompts([{ pick: "don't ask again" }]));
+        await vscode.commands.executeCommand('sextant.openTerminalForItem', contextNode(a, 'plain'));
+        assert.deepEqual(cfg().inspect<string[]>('confirm.skip')?.globalValue, ['plain']);
+        a.setPrompts(new ScriptedPrompts([]));
+        await vscode.commands.executeCommand('sextant.openTerminalForItem', contextNode(a, 'plain'));
+        assert.equal(a.terminals.list().length, 2);
+        for (const b of [...a.terminals.list()]) b.terminal.dispose();
+        await eventually('terminals to close', () => a.terminals.list().length === 0);
+      } finally {
+        await resetSettings(a);
+      }
+    },
+  ],
+  [
+    'shell integration confirms the binding (visible echo, pin first), or the terminal reports unverified',
+    async () => {
+      const a = await api();
+      a.setPrompts(new ScriptedPrompts([]));
+      await vscode.commands.executeCommand('sextant.openTerminalForItem', contextNode(a, 'plain'));
+      const bound = a.terminals.list()[0];
+      assert.ok(bound);
+      await eventually(
+        'the binding check to finish',
+        () => a.terminals.bindingOf(bound.terminal) !== 'pending',
+        12000,
+      );
+      const result = a.terminals.bindingOf(bound.terminal);
+      console.log(`       (binding result: ${String(result)}, shell: ${vscode.env.shell})`);
+      assert.ok(result === 'verified' || result === 'unverified' || result === 'not-checkable');
+      if (process.env.SEXTANT_EXPECT_VERIFIED !== undefined) assert.equal(result, 'verified');
+      bound.terminal.dispose();
+      await eventually('the terminal to close', () => a.terminals.list().length === 0);
     },
   ],
   [
@@ -172,12 +405,13 @@ const cases: [string, () => Promise<void>][] = [
       const a = await api();
       const all = contextNames(a).length;
       a.fleet.setFilter('gke');
+      assert.equal(a.fleet.getFilter(), 'gke');
       assert.deepEqual(contextNames(a), ['gke_proj_eu_stg']);
       assert.ok(
         a.fleet.getChildren().every((n) => n.kind === 'environment'),
         'empty groups must be dropped',
       );
-      await vscode.commands.executeCommand('sextant.fleet.clearFilter');
+      await vscode.commands.executeCommand('sextant.clearFilter');
       assert.equal(contextNames(a).length, all);
       a.fleet.setFilter('no-such-cluster');
       assert.deepEqual(

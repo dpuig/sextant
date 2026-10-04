@@ -1,127 +1,232 @@
 import type { KubeContext } from '../kubeconfig';
+import { compareEnvironments, type ResolvedTag } from './tags';
 
 /**
- * The fleet tree as plain data: environment -> provider -> context. Pure (no `vscode`), so grouping, ordering, filtering
- * and the text shown to the user are unit-tested, and the canary harness can check every label and tooltip.
+ * The fleet tree as plain data: Environment > Platform > Context > detail rows. Pure (no `vscode`), so grouping,
+ * ordering, filtering and every string shown are unit-tested and the canary harness can check them. Layout, labels,
+ * icons and wording follow the design system (extension/ui-ux/sextant-design-system).
  */
+export const UNTAGGED = 'Untagged';
+export const COLLAPSE_ABOVE = 40;
+
+/** Platform order is fixed by the design: it is a ranking, not alphabetical. */
+const PLATFORMS: { id: string; label: string; icon: string }[] = [
+  { id: 'eks', label: 'Amazon EKS', icon: 'cloud' },
+  { id: 'gke', label: 'Google GKE', icon: 'cloud' },
+  { id: 'aks', label: 'Azure AKS', icon: 'cloud' },
+  { id: 'openshift', label: 'OpenShift', icon: 'server' },
+  { id: 'kind', label: 'kind', icon: 'vm' },
+  { id: 'minikube', label: 'minikube', icon: 'vm' },
+  { id: 'docker-desktop', label: 'Docker Desktop', icon: 'vm' },
+];
+const OTHER = { id: 'other', label: 'Other', icon: 'symbol-misc' };
+
+export const platformOf = (provider: string): { id: string; label: string; icon: string } =>
+  PLATFORMS.find((p) => p.id === provider) ?? OTHER;
+
+export interface ContextView {
+  context: KubeContext;
+  environment: string; // UNTAGGED when there is no tag
+  critical: boolean;
+  current: boolean;
+  /** A bound terminal is open for this context. */
+  terminal: boolean;
+}
+
+export interface DetailRow {
+  kind: 'detail';
+  id: string;
+  label: string;
+  value: string;
+  icon: string;
+  accessibility: string;
+}
+
 export type FleetNode =
-  | { kind: 'environment'; id: string; label: string; children: FleetNode[] }
-  | { kind: 'provider'; id: string; label: string; children: FleetNode[] }
-  | { kind: 'context'; id: string; label: string; context: KubeContext; current: boolean };
+  | {
+      kind: 'environment';
+      id: string;
+      label: string;
+      environment: string;
+      critical: boolean;
+      description: string;
+      icon: string;
+      colorId: string;
+      accessibility: string;
+      collapsed: boolean;
+      children: FleetNode[];
+    }
+  | {
+      kind: 'platform';
+      id: string;
+      label: string;
+      description: string;
+      icon: string;
+      accessibility: string;
+      collapsed: boolean;
+      children: FleetNode[];
+    }
+  | ({
+      kind: 'context';
+      id: string;
+      label: string;
+      description: string;
+      tooltip: string;
+      icon: string;
+      colorId: string | undefined;
+      accessibility: string;
+      children: DetailRow[];
+    } & {
+      view: ContextView;
+    });
 
 export interface BuildOptions {
   currentContext?: string;
-  /** Environment tag of a context (Task 7); `undefined` means untagged. */
-  environmentOf?: (c: KubeContext) => string | undefined;
-  /** Case-insensitive substring over name, cluster, user, host, provider and environment. */
+  tagOf?: (c: KubeContext) => ResolvedTag | undefined;
+  /** Contexts that have a bound terminal open. */
+  terminals?: ReadonlySet<string>;
+  /** Case-insensitive substring over name, platform, environment and server host. */
   filter?: string;
-}
-
-export const UNTAGGED = 'Untagged';
-export const OTHER_PROVIDER = 'Other';
-
-const PROVIDER_LABELS: Record<string, string> = {
-  eks: 'Amazon EKS',
-  gke: 'Google GKE',
-  aks: 'Azure AKS',
-  openshift: 'OpenShift',
-  kind: 'kind',
-  minikube: 'minikube',
-  'docker-desktop': 'Docker Desktop',
-};
-
-export function providerLabel(provider: string): string {
-  return PROVIDER_LABELS[provider] ?? OTHER_PROVIDER;
+  now?: Date;
 }
 
 export function buildFleetTree(contexts: readonly KubeContext[], opts: BuildOptions = {}): FleetNode[] {
-  const envOf = opts.environmentOf ?? (() => undefined);
+  const now = opts.now ?? new Date();
   const needle = (opts.filter ?? '').trim().toLowerCase();
+  const collapseGroups = contexts.length > COLLAPSE_ABOVE;
 
-  // environment -> provider label -> contexts
-  const groups = new Map<string, Map<string, KubeContext[]>>();
-  for (const c of contexts) {
-    const env = envOf(c) ?? UNTAGGED;
-    if (needle !== '' && !matches(c, env, needle)) continue;
-    const provider = providerLabel(c.provider);
-    const byProvider = groups.get(env) ?? new Map<string, KubeContext[]>();
-    const list = byProvider.get(provider) ?? [];
-    list.push(c);
-    byProvider.set(provider, list);
-    groups.set(env, byProvider);
-  }
+  const views: ContextView[] = contexts
+    .map((context): ContextView => {
+      const tag = opts.tagOf?.(context);
+      return {
+        context,
+        environment: tag?.environment ?? UNTAGGED,
+        critical: tag?.critical ?? false,
+        current: context.name === opts.currentContext,
+        terminal: opts.terminals?.has(context.name) ?? false,
+      };
+    })
+    .filter((v) => needle === '' || matchesFilter(v, needle));
 
-  const envs = [...groups.keys()].sort(untaggedLast);
+  const byEnv = new Map<string, ContextView[]>();
+  for (const v of views) byEnv.set(v.environment, [...(byEnv.get(v.environment) ?? []), v]);
+
+  const envs = [...byEnv.keys()].sort((a, b) =>
+    a === UNTAGGED ? 1 : b === UNTAGGED ? -1 : compareEnvironments(a, b),
+  );
   return envs.map((env): FleetNode => {
-    const byProvider = groups.get(env) ?? new Map<string, KubeContext[]>();
-    const providers = [...byProvider.keys()].sort(otherLast);
+    const inEnv = byEnv.get(env) ?? [];
+    const critical = env === 'prod';
+    const platforms = [...PLATFORMS, OTHER].filter((p) =>
+      inEnv.some((v) => platformOf(v.context.provider).id === p.id),
+    );
     return {
       kind: 'environment',
       id: `env:${env}`,
       label: env,
-      children: providers.map((p): FleetNode => ({
-        kind: 'provider',
-        id: `prov:${env}/${p}`,
-        label: p,
-        children: (byProvider.get(p) ?? [])
-          .slice()
-          .sort((a, b) => a.name.localeCompare(b.name))
-          .map((c): FleetNode => ({
-            kind: 'context',
-            id: `ctx:${c.name}`,
-            label: c.name,
-            context: c,
-            current: c.name === opts.currentContext,
-          })),
-      })),
+      environment: env,
+      critical,
+      description: critical ? `${String(inEnv.length)} · critical` : String(inEnv.length),
+      icon: envIcon(env),
+      colorId: envColorId(env),
+      accessibility: `${env} environment${critical ? ', critical' : ''}, ${plural(inEnv.length, 'context')}`,
+      collapsed: collapseGroups,
+      children: platforms.map((p): FleetNode => {
+        const inPlatform = inEnv
+          .filter((v) => platformOf(v.context.provider).id === p.id)
+          .sort((a, b) => a.context.name.localeCompare(b.context.name));
+        return {
+          kind: 'platform',
+          id: `plat:${env}/${p.id}`,
+          label: p.label,
+          description: String(inPlatform.length),
+          icon: p.icon,
+          accessibility: `${p.label}, ${plural(inPlatform.length, 'context')}`,
+          collapsed: false,
+          children: inPlatform.map((v) => contextNode(v, now)),
+        };
+      }),
     };
   });
 }
 
+function contextNode(v: ContextView, now: Date): Extract<FleetNode, { kind: 'context' }> {
+  const c = v.context;
+  return {
+    kind: 'context',
+    id: `ctx:${c.name}`,
+    label: c.name,
+    description: contextDescription(v, now),
+    tooltip: contextTooltip(c, v.current, now),
+    icon: v.current ? 'pass-filled' : 'circle-large-outline',
+    colorId: v.current ? 'sextant.currentContextForeground' : undefined,
+    accessibility: contextAccessibility(v, now),
+    children: detailRows(c, now),
+    view: v,
+  };
+}
+
+function matchesFilter(v: ContextView, needle: string): boolean {
+  const c = v.context;
+  return [c.name, platformOf(c.provider).label, c.provider, v.environment, c.serverHost ?? ''].some((s) =>
+    s.toLowerCase().includes(needle),
+  );
+}
+
 export function countContexts(nodes: readonly FleetNode[]): number {
   let n = 0;
-  for (const node of nodes) {
-    if (node.kind === 'context') n++;
-    else n += countContexts(node.children);
-  }
+  for (const node of nodes) n += node.kind === 'context' ? 1 : countContexts(node.children);
   return n;
 }
 
-function matches(c: KubeContext, env: string, needle: string): boolean {
-  return [
-    c.name,
-    c.clusterName,
-    c.userName,
-    c.serverHost ?? '',
-    c.provider,
-    providerLabel(c.provider),
-    env,
-  ].some((s) => s.toLowerCase().includes(needle));
+const plural = (n: number, word: string): string => `${String(n)} ${word}${n === 1 ? '' : 's'}`;
+
+function envIcon(env: string): string {
+  return env === 'prod'
+    ? 'warning'
+    : env === 'staging'
+      ? 'beaker'
+      : env === 'dev'
+        ? 'code'
+        : env === UNTAGGED
+          ? 'question'
+          : 'tag';
 }
 
-const untaggedLast = (a: string, b: string): number =>
-  a === b ? 0 : a === UNTAGGED ? 1 : b === UNTAGGED ? -1 : a.localeCompare(b);
-const otherLast = (a: string, b: string): number =>
-  a === b ? 0 : a === OTHER_PROVIDER ? 1 : b === OTHER_PROVIDER ? -1 : a.localeCompare(b);
-
-/** One line under the context name: current marker, how it authenticates, and where it points. */
-export function contextDescription(c: KubeContext, current: boolean): string {
-  const parts: string[] = [];
-  if (current) parts.push('current');
-  parts.push(authLabel(c));
-  if (c.serverHost !== undefined) parts.push(c.serverHost);
-  return parts.join(' · ');
+function envColorId(env: string): string {
+  return env === 'prod'
+    ? 'sextant.env.prodForeground'
+    : env === 'staging'
+      ? 'sextant.env.stagingForeground'
+      : env === 'dev'
+        ? 'sextant.env.devForeground'
+        : 'sextant.env.untaggedForeground';
 }
 
-export function authLabel(c: KubeContext): string {
+// ---- text -----------------------------------------------------------------------------------------------------
+
+export const isoDate = (d: Date): string => d.toISOString().slice(0, 10);
+const longDate = (d: Date): string =>
+  `${String(d.getUTCDate())} ${d.toLocaleString('en-GB', { month: 'long', timeZone: 'UTC' })} ${String(d.getUTCFullYear())}`;
+
+export function isExpired(c: KubeContext, now: Date): boolean {
+  return c.credential.expiresAt !== undefined && c.credential.expiresAt.getTime() < now.getTime();
+}
+
+/** How the context authenticates, in the Fleet view's wording ("aws IAM", "client cert · long-lived", ...). */
+export function authLabel(c: KubeContext, now: Date): string {
   const { kind, provider } = c.credential;
   switch (kind) {
     case 'static-token':
-      return 'static token';
-    case 'client-cert':
-      return 'client certificate';
+      return 'static token · long-lived';
     case 'basic-auth':
-      return 'basic auth';
+      return 'basic auth · long-lived';
+    case 'client-cert':
+      return isExpired(c, now)
+        ? 'client cert · expired'
+        : c.credential.longLived
+          ? 'client cert · long-lived'
+          : 'client cert';
     case 'oidc':
       return 'OIDC';
     case 'cloud-iam':
@@ -133,18 +238,70 @@ export function authLabel(c: KubeContext): string {
   }
 }
 
-/** Plain-text tooltip. Names, hosts and credential classification only; never a credential value. */
-export function contextTooltip(c: KubeContext, current: boolean): string {
-  const lines = [
-    `Context: ${c.name}${current ? '  (current)' : ''}`,
+/** `current · terminal · {auth} · {host}`, each part optional, in that order. */
+export function contextDescription(v: ContextView, now: Date): string {
+  const parts: string[] = [];
+  if (v.current) parts.push('current');
+  if (v.terminal) parts.push('terminal');
+  parts.push(authLabel(v.context, now));
+  if (v.context.serverHost !== undefined) parts.push(v.context.serverHost);
+  return parts.join(' · ');
+}
+
+function expiryText(c: KubeContext, now: Date): string {
+  const exp = c.credential.expiresAt;
+  if (exp !== undefined) return isExpired(c, now) ? `expired ${isoDate(exp)}` : isoDate(exp);
+  return c.credential.kind === 'static-token' ||
+    c.credential.kind === 'basic-auth' ||
+    c.credential.kind === 'client-cert'
+    ? 'no expiry'
+    : 'issued on demand';
+}
+
+/** Plain-text tooltip, one `Label: value` per line. Names, hosts and classification only; never a credential value. */
+export function contextTooltip(c: KubeContext, current: boolean, now: Date): string {
+  const exp = c.credential.expiresAt;
+  const auth = authLabel(c, now).replace(' · long-lived', '').replace(' · expired', '');
+  return [
+    `Context: ${c.name}${current ? ' (current)' : ''}`,
     `Cluster: ${c.clusterName}`,
     `User: ${c.userName}`,
+    `Namespace: ${c.namespace ?? 'default'}`,
+    `Server: ${c.serverHost ?? 'n/a'}`,
+    `Authentication: ${auth}${c.credential.longLived ? ' (long-lived)' : ''}`,
+    `Certificate expiry: ${exp !== undefined ? isoDate(exp) : 'n/a (token)'}`,
+    `Defined in: ${c.sourceFile}`,
+  ].join('\n');
+}
+
+export function detailRows(c: KubeContext, now: Date): DetailRow[] {
+  const rows: [string, string, string][] = [
+    ['Server', c.serverHost ?? 'n/a', 'globe'],
+    ['Namespace', c.namespace ?? 'default', 'symbol-namespace'],
+    ['Credential', authLabel(c, now), 'key'],
+    ['Expires', expiryText(c, now), 'calendar'],
+    ['Source file', c.sourceFile, 'file'],
   ];
-  if (c.namespace !== undefined) lines.push(`Namespace: ${c.namespace}`);
-  if (c.serverHost !== undefined) lines.push(`Server: ${c.serverHost}`);
-  lines.push(`Authentication: ${authLabel(c)}${c.credential.longLived ? ' (long-lived)' : ''}`);
-  if (c.credential.expiresAt !== undefined)
-    lines.push(`Certificate expires: ${c.credential.expiresAt.toISOString().slice(0, 10)}`);
-  lines.push(`Defined in: ${c.sourceFile}`);
-  return lines.join('\n');
+  return rows.map(([label, value, icon]) => ({
+    kind: 'detail',
+    id: `detail:${c.name}/${label}`,
+    label,
+    value,
+    icon,
+    accessibility:
+      label === 'Expires' && c.credential.expiresAt !== undefined
+        ? `Expires: ${isExpired(c, now) ? 'expired ' : ''}${longDate(c.credential.expiresAt)}`
+        : `${label}: ${value}`,
+  }));
+}
+
+/** Screen-reader label: environment and criticality come BEFORE the platform, as the design requires. */
+export function contextAccessibility(v: ContextView, now: Date): string {
+  const parts = [v.context.name];
+  if (v.current) parts.push('current context');
+  parts.push(v.environment === UNTAGGED ? 'untagged' : v.environment);
+  if (v.critical) parts.push('critical');
+  parts.push(platformOf(v.context.provider).label, authLabel(v.context, now).replace(' · ', ', '));
+  if (v.terminal) parts.push('terminal open');
+  return parts.join(', ');
 }

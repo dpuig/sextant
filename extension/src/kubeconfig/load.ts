@@ -60,6 +60,7 @@ export async function loadFleet(opts: DiscoverOptions & { readFile?: ReadFile })
       ...(c.value.namespace === undefined ? {} : { namespace: c.value.namespace }),
       ...(host === undefined ? {} : { serverHost: host }),
       sourceFile: c.file,
+      ...(c.line === undefined ? {} : { sourceLine: c.line }),
       credential,
       provider: inferProvider({
         contextName: c.name,

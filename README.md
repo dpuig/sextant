@@ -135,8 +135,7 @@ up yet; see below.
 ```
 cmd/apiserver        management plane: migrate | serve | pki init
 cmd/agent            in-cluster agent
-cmd/controllers      reconcilers (scaffold)
-cmd/kx               CLI (scaffold)
+cmd/kx               credential helper and CLI (scaffold; arrives with E2)
 pkg/apis/v1alpha1    API types and validation
 pkg/registry         typed layer over storage; server-owned fields, status subresource
 pkg/storage          tenant-scoped Postgres, migrations, registration tokens
@@ -150,6 +149,7 @@ pkg/tenancy          tenant identity carried in context
 third_party/         vendored forks, each with an UPSTREAM.md of local patches
 deploy/              Helm charts, Dockerfiles, chart tests
 test/e2e             kind-based exit-gate tests
+extension/           VS Code extension (E1): kubeconfig core, fleet view, tests
 docs/                specs, ADRs, testing notes
 ```
 

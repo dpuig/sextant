@@ -1,126 +1,155 @@
 import * as vscode from 'vscode';
-import { discoverKubeconfigPaths, loadFleet, type Fleet } from '../kubeconfig';
-import {
-  buildFleetTree,
-  contextDescription,
-  contextTooltip,
-  countContexts,
-  type FleetNode,
-} from '../model/fleetTree';
-import { watchFiles } from './watcher';
+import { buildFleetTree, countContexts, type DetailRow, type FleetNode } from '../model/fleetTree';
+import type { Store } from '../store';
+import { S } from '../ui/strings';
 
-/** Marker node shown when some kubeconfig files could not be read. Names files only, never their content. */
 interface WarningNode {
   kind: 'warning';
   id: string;
   files: string[];
 }
-type Node = FleetNode | WarningNode;
+export type FleetViewNode = FleetNode | DetailRow | WarningNode;
 
-export class FleetTreeProvider implements vscode.TreeDataProvider<Node>, vscode.Disposable {
-  private readonly changed = new vscode.EventEmitter<Node | undefined>();
+const setContext = (key: string, value: boolean): void => {
+  void vscode.commands.executeCommand('setContext', key, value);
+};
+
+/**
+ * The Fleet view: Environment > Platform > Context > detail rows, drawn from the pure model in src/model/fleetTree.ts.
+ * Everything visible is a native TreeItem; the wording, icons and colours come from the design system.
+ */
+export class FleetTreeProvider implements vscode.TreeDataProvider<FleetViewNode>, vscode.Disposable {
+  private readonly changed = new vscode.EventEmitter<FleetViewNode | undefined>();
   readonly onDidChangeTreeData = this.changed.event;
-
-  private fleet: Fleet = { contexts: [], files: [], errors: [] };
-  private tree: FleetNode[] = [];
   private filter = '';
-  private generation = 0;
-  private watcher: vscode.Disposable | undefined;
-  private loaded: Promise<void> = Promise.resolve();
+  private view: vscode.TreeView<FleetViewNode> | undefined;
+  private readonly sub: vscode.Disposable;
 
-  constructor(private readonly setContext: (hasContexts: boolean) => void) {}
-
-  /** Resolves when the most recent load has finished. For tests and callers that must see fresh data. */
-  whenLoaded(): Promise<void> {
-    return this.loaded;
+  constructor(private readonly store: Store) {
+    this.sub = store.onDidChange(() => {
+      this.update();
+    });
   }
 
-  /** (Re)discovers the kubeconfig files, reloads them and re-arms the file watchers. */
-  refresh(): Promise<void> {
-    const mine = ++this.generation;
-    this.loaded = this.load(mine);
-    return this.loaded;
-  }
-
-  private configuredPaths(): string[] {
-    return vscode.workspace.getConfiguration('sextant').get<string[]>('kubeconfigPaths', []);
-  }
-
-  private async load(mine: number): Promise<void> {
-    const opts = { env: process.env, configuredPaths: this.configuredPaths() };
-    const paths = discoverKubeconfigPaths(opts);
-    this.watcher?.dispose();
-    this.watcher = watchFiles(paths, () => void this.refresh());
-    const fleet = await loadFleet(opts);
-    if (mine !== this.generation) return; // a newer load started while this one was reading: drop the stale result
-    this.fleet = fleet;
-    this.rebuild();
-  }
-
-  setFilter(text: string): void {
-    this.filter = text;
-    this.rebuild();
+  attach(view: vscode.TreeView<FleetViewNode>): void {
+    this.view = view;
+    this.update();
   }
 
   getFilter(): string {
     return this.filter;
   }
 
-  private rebuild(): void {
-    this.tree = buildFleetTree(this.fleet.contexts, {
-      ...(this.fleet.currentContext === undefined ? {} : { currentContext: this.fleet.currentContext }),
-      filter: this.filter,
+  setFilter(text: string): void {
+    this.filter = text.trim();
+    this.update();
+  }
+
+  /** How many contexts a filter would leave, for the live message in the filter box. */
+  previewCount(text: string): { shown: number; total: number } {
+    return { shown: countContexts(this.build(text.trim())), total: this.store.fleet.contexts.length };
+  }
+
+  private build(filter: string): FleetNode[] {
+    return buildFleetTree(this.store.fleet.contexts, {
+      ...(this.store.fleet.currentContext === undefined
+        ? {}
+        : { currentContext: this.store.fleet.currentContext }),
+      tagOf: this.store.tagOf,
+      terminals: this.store.terminalSet(),
+      filter,
+      now: this.store.now(),
     });
-    this.setContext(this.fleet.contexts.length > 0);
-    void vscode.commands.executeCommand('setContext', 'sextant.filtered', this.filter.trim() !== '');
+  }
+
+  tree(): FleetNode[] {
+    return this.build(this.filter);
+  }
+
+  private update(): void {
+    const total = this.store.fleet.contexts.length;
+    const shown = countContexts(this.tree());
+    const filtered = this.filter !== '';
+    setContext('sextant.filterActive', filtered);
+    setContext('sextant.filterEmpty', filtered && shown === 0);
+    setContext('sextant.noKubeconfig', this.store.loaded && total === 0);
+    if (this.view) {
+      this.view.message =
+        this.store.loading && !this.store.loaded
+          ? S.fleet.loading
+          : filtered
+            ? S.fleet.filtered(this.filter, shown, total)
+            : undefined;
+    }
     this.changed.fire(undefined);
   }
 
-  getChildren(node?: Node): Node[] {
+  getChildren(node?: FleetViewNode): FleetViewNode[] {
     if (node === undefined) {
-      const failed = this.fleet.errors.map((e) => e.file);
+      const failed = this.store.fleet.errors.map((e) => e.file);
       const warning: WarningNode[] =
-        failed.length > 0 ? [{ kind: 'warning', id: 'warn', files: failed }] : [];
-      return [...warning, ...this.tree];
+        failed.length > 0 ? [{ kind: 'warning', id: 'warning', files: failed }] : [];
+      return [...warning, ...this.tree()];
     }
-    return node.kind === 'warning' || node.kind === 'context' ? [] : node.children;
+    if (node.kind === 'warning' || node.kind === 'detail') return [];
+    return node.children;
   }
 
-  getTreeItem(node: Node): vscode.TreeItem {
+  getTreeItem(node: FleetViewNode): vscode.TreeItem {
     if (node.kind === 'warning') {
       const item = new vscode.TreeItem(
-        `${node.files.length} kubeconfig file${node.files.length === 1 ? '' : 's'} could not be read`,
+        S.fleet.warningRow(node.files.length),
         vscode.TreeItemCollapsibleState.None,
       );
       item.id = node.id;
-      item.iconPath = new vscode.ThemeIcon('warning');
-      item.tooltip = `Skipped (unreadable or not valid kubeconfig):\n${node.files.join('\n')}`;
+      item.iconPath = new vscode.ThemeIcon('warning', new vscode.ThemeColor('editorWarning.foreground'));
+      item.tooltip = S.fleet.warningTooltip(node.files); // paths only; parser output can quote file content
+      item.contextValue = 'warning';
+      item.accessibilityInformation = {
+        label: `Warning: ${S.fleet.warningRow(node.files.length)}. Hover or press Ctrl+K Ctrl+I for the paths.`,
+        role: 'treeitem',
+      };
+      return item;
+    }
+    if (node.kind === 'detail') {
+      const item = new vscode.TreeItem(node.label, vscode.TreeItemCollapsibleState.None);
+      item.id = node.id;
+      item.description = node.value;
+      item.iconPath = new vscode.ThemeIcon(node.icon);
+      item.contextValue = 'detail';
+      item.accessibilityInformation = { label: node.accessibility, role: 'treeitem' };
       return item;
     }
     if (node.kind === 'context') {
-      const item = new vscode.TreeItem(node.label, vscode.TreeItemCollapsibleState.None);
+      const item = new vscode.TreeItem(node.label, vscode.TreeItemCollapsibleState.Collapsed);
       item.id = node.id;
-      item.description = contextDescription(node.context, node.current);
-      item.tooltip = contextTooltip(node.context, node.current);
-      item.iconPath = new vscode.ThemeIcon(node.current ? 'pass-filled' : 'circle-outline');
-      item.contextValue = 'sextant.context';
+      item.description = node.description;
+      item.tooltip = node.tooltip; // plain text, as the design specifies
+      item.iconPath = new vscode.ThemeIcon(
+        node.icon,
+        node.colorId === undefined ? undefined : new vscode.ThemeColor(node.colorId),
+      );
+      item.contextValue = 'context';
+      item.accessibilityInformation = { label: node.accessibility, role: 'treeitem' };
       return item;
     }
-    const many = countContexts(this.tree) > 30;
-    const state =
-      node.kind === 'environment' || !many
-        ? vscode.TreeItemCollapsibleState.Expanded
-        : vscode.TreeItemCollapsibleState.Collapsed;
+    const state = node.collapsed
+      ? vscode.TreeItemCollapsibleState.Collapsed
+      : vscode.TreeItemCollapsibleState.Expanded;
     const item = new vscode.TreeItem(node.label, state);
     item.id = node.id;
-    item.description = String(countContexts([node]));
-    item.iconPath = new vscode.ThemeIcon(node.kind === 'environment' ? 'layers' : 'server-environment');
-    item.contextValue = `sextant.${node.kind}`;
+    item.description = node.description;
+    item.iconPath =
+      node.kind === 'environment'
+        ? new vscode.ThemeIcon(node.icon, new vscode.ThemeColor(node.colorId))
+        : new vscode.ThemeIcon(node.icon);
+    item.contextValue = node.kind;
+    item.accessibilityInformation = { label: node.accessibility, role: 'treeitem' };
     return item;
   }
 
   dispose(): void {
-    this.watcher?.dispose();
+    this.sub.dispose();
     this.changed.dispose();
   }
 }

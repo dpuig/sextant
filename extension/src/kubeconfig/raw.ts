@@ -6,6 +6,8 @@
 export interface RawNamed<T> {
   name: string;
   value: T;
+  /** 1-based line of the entry in its file (a position, never content). Used to open the file at the context. */
+  line?: number;
 }
 
 export interface RawContext {

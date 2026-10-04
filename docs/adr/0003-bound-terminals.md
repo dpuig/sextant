@@ -1,6 +1,6 @@
 # ADR 0003: Bound terminals use a generated one-context kubeconfig
 
-Status: accepted (2026-10-04), **conditional on the mitigation in "Shell startup files override KUBECONFIG"**.
+Status: **superseded by [ADR 0005](0005-pin-file-bound-terminals.md)** (2026-10-04). Kept for the reasoning; the mechanism changed from a generated one-context kubeconfig to a pin file that holds only `current-context`.
 Spike: [extension/test/spike/bound-terminal.sh](../../extension/test/spike/bound-terminal.sh) (throwaway; replaced by the
 real tests in Tasks 9 and 10 of the [E1 plan](../specs/vscode-extension-plan.md)).
 

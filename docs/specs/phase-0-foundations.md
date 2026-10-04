@@ -48,7 +48,6 @@ Codegen:          make generate              # deepcopy, clients, openapi; CI fa
 Dev stack:        make dev-up                # docker compose: postgres + nats; runs apiserver locally
 Kind e2e:         make e2e                   # kind cluster + helm install + go test ./test/e2e/... -tags e2e
 Tenant isolation: make test-isolation        # go test ./test/isolation/... against real Postgres
-Tunnel bench:     make bench-tunnel          # latency + reconnect benchmark used for exit gates
 Images:           make images                # build apiserver, controllers, agent, kx
 Sign + SBOM:      make release-dry-run       # cosign (keyless disabled locally) + syft
 Helm lint:        helm lint deploy/charts/*
@@ -56,27 +55,28 @@ Helm lint:        helm lint deploy/charts/*
 
 ## Project Structure
 
+As built. Items from the original plan that do not exist yet (generated clients, a NATS events package, OpenTelemetry
+setup, the isolation suite, a threat model, a Vault signer) are tracked in the status table at the end, not here.
+
 ```
-cmd/apiserver/      → management-plane API server
-cmd/controllers/    → reconcilers (Cluster, AccessGrant, ...)
-cmd/agent/          → in-cluster agent
-cmd/kx/             → CLI (Phase 0: `kx version`, `kx cluster register` only)
-pkg/apis/           → versioned API types (v1alpha1): Organization, Workspace, Environment, Cluster, AccessGrant
-pkg/client/         → generated typed clients
-pkg/storage/        → Postgres-backed storage, tenant-scoped
-pkg/tenancy/        → tenant context, path scoping, row-level enforcement helpers
-pkg/pki/            → Signer interface; localfile/ and vault/ implementations; per-tenant intermediates
-pkg/tunnel/         → server + client over vendored remotedialer (third_party/ for the fork)
-pkg/events/         → NATS JetStream publisher/consumer wrappers
-pkg/telemetry/      → OTel setup shared by all binaries
-web/                → React UI scaffold
-deploy/charts/      → sextant (management plane) and sextant-agent Helm charts
-test/e2e/           → kind-based end-to-end
-test/isolation/     → cross-tenant isolation suite
-docs/specs/         → specs (this file)
-docs/adr/           → architecture decision records
-docs/threat-model/  → per-phase threat models (Phase 0 first)
-third_party/        → vendored forks, with UPSTREAM.md recording commit + local patches
+cmd/apiserver/      management plane: migrate | serve | pki init
+cmd/agent/          in-cluster agent
+cmd/kx/             credential helper and CLI (scaffold; arrives with E2)
+pkg/apis/v1alpha1/  API types and validation: Organization, Workspace, Environment, Cluster, AccessGrant
+pkg/registry/       typed layer over storage; server-owned fields, status subresource
+pkg/storage/        Postgres, tenant-scoped, migrations, registration tokens
+pkg/server/         REST API, cluster proxy, token endpoint
+pkg/enroll/         token + CSR -> certificate; mTLS renewal
+pkg/pki/            per-tenant intermediates, agent identity, key policy (localfile signer)
+pkg/tunnel/         mTLS tunnel server and agent over the vendored remotedialer
+pkg/agent/          credentials, rotation, kube-apiserver proxy, Secret store
+pkg/controllers/    Cluster connectivity status
+pkg/tenancy/        tenant identity carried in context
+pkg/version/        build version
+third_party/        vendored forks, with UPSTREAM.md recording commit + local patches
+deploy/             Helm charts, Dockerfiles, chart tests
+test/e2e/           kind-based end-to-end gates
+docs/               specs, ADRs, testing notes
 ```
 
 ## Code Style
@@ -110,7 +110,7 @@ tests named `TestThing_Behavior`; table-driven where inputs vary; comments expla
 | Isolation | `go test` against real Postgres | `test/isolation/` | every API verb × resource, cross-tenant read/write/list/watch must fail |
 | E2E | kind + Helm | `test/e2e/` | install, connect, kubectl via tunnel, restart/reconnect |
 | Chaos (basic) | scripted pod kills / network drops | `test/e2e/chaos/` | management-plane restart, NAT/conn drop |
-| Bench | Go benchmarks + e2e harness | `make bench-tunnel` | added p95 latency, reconnect time |
+| Latency / reconnect | e2e harness on kind | `make e2e` | added p95 latency (G3), reconnect after restart (G2) |
 
 Coverage expectation: ≥80% on `pkg/tenancy`, `pkg/pki`, `pkg/storage`, `pkg/tunnel`. These are high-risk
 packages and are reviewed line by line. The isolation suite is generated from the API resource list, so a new
@@ -167,7 +167,7 @@ Exit gate from the plan, made testable:
 - [ ] **G2 Resilience** (incl. silent partitions: dead-peer detection 15 s + reconnect backoff ≤ 5 s): killing the apiserver pod (and separately, a full management-plane rollout restart) does not require operator action;
       the agent shows reconnected within **30 s** in 20/20 consecutive runs.
 - [ ] **G3 Latency:** `kubectl get pods` through the tunnel against kind, in-region, adds **p95 < 50 ms** over direct access across ≥1,000 requests
-      (`make bench-tunnel`).
+      (`make e2e`).
 - [ ] **G4 Isolation:** isolation suite passes — for every resource and every verb (get, list, watch, create, update, delete), tenant A cannot read or
       affect tenant B's objects, including via direct SQL-adjacent paths (RLS test with the app role) and NATS subject subscription.
 - [ ] **G5 Identity:** registration token is single-use (second use rejected), expired tokens rejected, agent cert rotates automatically without dropping

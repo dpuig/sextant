@@ -7,7 +7,7 @@ Status: accepted, including the WebSocket transport (owner sign-off 2026-10-02).
 The spec says to fork/vendor Rancher `remotedialer` rather than write a tunnel,
 and the Foundations gates require: agent reconnect within 30 s (G2) and added p95
 latency under 50 ms (G3). We spiked `remotedialer` v0.6.1 on loopback
-(`make bench-tunnel`, `spikes/tunnel/`).
+(a throwaway spike in commit `493e9ea`, since removed). The same gates are now measured by `pkg/tunnel`'s tests and by `make e2e`.
 
 ## Measurements
 
