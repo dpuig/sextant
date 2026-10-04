@@ -1,0 +1,4 @@
+# Windows runners check out with CRLF by default, which fails prettier --check and shell fixtures.
+* text=auto eol=lf
+*.pdf binary
+*.svg text eol=lf

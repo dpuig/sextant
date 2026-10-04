@@ -21,6 +21,8 @@ export interface TestApi {
   audit: AuditTreeProvider;
   status: StatusBarController;
   terminals: TerminalManager;
+  /** Time spent inside activate(), for the 200 ms budget; reading kubeconfig files continues afterwards. */
+  activationMs: number;
   /** Replace the QuickPick/InputBox layer with a scripted one. */
   setPrompts(p: Prompts): void;
 }
@@ -42,6 +44,7 @@ const isoToday = (d: Date): string => d.toISOString().slice(0, 10);
  * count expired credentials without the user opening anything. It reads kubeconfig files on this machine only.
  */
 export function activate(context: vscode.ExtensionContext): TestApi {
+  const started = performance.now();
   let prompts: Prompts = vscodePrompts;
   const store = new Store();
   const fleet = new FleetTreeProvider(store);
@@ -233,6 +236,7 @@ export function activate(context: vscode.ExtensionContext): TestApi {
     audit,
     status,
     terminals,
+    activationMs: performance.now() - started,
     setPrompts: (p) => {
       prompts = p;
     },

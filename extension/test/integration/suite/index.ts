@@ -72,6 +72,14 @@ const cases: [string, () => Promise<void>][] = [
     },
   ],
   [
+    'activate() itself returns in under 200 ms (file reading continues afterwards)',
+    async () => {
+      const a = await api();
+      console.log(`       (activate() took ${a.activationMs.toFixed(1)} ms)`);
+      assert.ok(a.activationMs < 200, `activation took ${String(a.activationMs)} ms`);
+    },
+  ],
+  [
     'every contributed command is registered',
     async () => {
       await api();
@@ -257,7 +265,9 @@ const cases: [string, () => Promise<void>][] = [
       const parts = kubeconfig.split(path.delimiter);
       assert.equal(parts[0], bound.pin, 'the pin must be FIRST');
       assert.deepEqual(parts.slice(1), a.store.userPaths(), 'the user files follow in their original order');
-      assert.equal(statSync(bound.pin).mode & 0o777, 0o400, 'the pin must be read-only');
+      // Windows has no POSIX mode bits; there the file is still created read-only by the OS attribute.
+      if (process.platform !== 'win32')
+        assert.equal(statSync(bound.pin).mode & 0o777, 0o400, 'the pin must be read-only');
       const content = readFileSync(bound.pin, 'utf8');
       assert.match(content, /^apiVersion: v1\nkind: Config\ncurrent-context: "plain"\n$/);
       expectNoCanary('pin file', content);
